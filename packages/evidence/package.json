@@ -1,0 +1,27 @@
+{
+  "name": "@capturelock/evidence",
+  "version": "0.0.1",
+  "private": true,
+  "description": "CaptureLock Evidence Envelope and Replayable Proof Ledger Contracts",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@capturelock/core": "workspace:*",
+    "@capturelock/policy": "workspace:*",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

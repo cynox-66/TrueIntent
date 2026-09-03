@@ -1,0 +1,9 @@
+{
+  "name": "@capturelock/web",
+  "version": "0.0.1",
+  "private": true,
+  "description": "CaptureLock Operator and Verification Console (Placeholder)",
+  "scripts": {
+    "info": "echo 'CaptureLock Web UI is reserved for Phase 2 implementation.'"
+  }
+}
