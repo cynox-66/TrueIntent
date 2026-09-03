@@ -1,0 +1,29 @@
+{
+  "name": "@capturelock/eval",
+  "version": "0.0.1",
+  "private": true,
+  "description": "CaptureLock adversarial evaluation harness: baseline versus gated execution",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "eval": "tsx src/main.ts",
+    "scenario": "tsx src/scenario-main.ts"
+  },
+  "dependencies": {
+    "@capturelock/core": "workspace:*",
+    "@capturelock/evidence": "workspace:*",
+    "@capturelock/integrations": "workspace:*",
+    "@capturelock/kernel": "workspace:*",
+    "@capturelock/persistence": "workspace:*",
+    "@capturelock/policy": "workspace:*",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

@@ -1,154 +1,213 @@
 # CaptureLock
 
-> **A capture-time payment execution verification and proof layer for agentic commerce.**  
-> Built for the **Razorpay AI Buildathon 2026** (Track 1: AI Growth & Agentic Commerce).
+> **A capture-time payment verification boundary for agentic commerce.**
+> Built for the Razorpay AI Buildathon 2026 (Track 1).
+
+CaptureLock sits between an autonomous agent and payment execution and answers
+one question at the moment money moves:
+
+> Does this transaction still match the user's authorized intent, the operator's
+> policy, and live commercial reality — right now?
+
+The property everything serves:
+
+> **The agent never has final authority to move money.**
 
 ---
-
-## Core Thesis
-
-> _"At the exact moment money moves, verify that the transaction still matches the authorized intent, live commercial state, policy, and execution state."_
-
-As autonomous AI buyer agents negotiate, compose carts, and execute payments, a critical verification void exists between initial user authorization (e.g. UPI Reserve Pay, AP2 mandates) and payment capture.
-
-**CaptureLock** sits between the agent and payment provider rails (demonstrated using Razorpay Test Mode) to guarantee that:
-
-1. **Prices and stock are fresh**: TOCTOU race conditions are prevented by re-verifying live merchant state at capture time.
-2. **Intent is preserved**: The transaction matches user desires, not just numerical budget ceilings.
-3. **Policies are strictly enforced**: Merchant discount caps, merchant whitelists, and category rules are evaluated deterministically.
-4. **Execution is exactly once**: Composite idempotency keys and atomic webhook deduplication prevent double-captures.
-5. **Proofs are replayable**: Every decision generates an immutable, hash-chained evidence envelope for offline dispute verification.
-
-```
-USER INTENT
-    ↓
-BUYER AGENT
-    ↓
-CAPTURELOCK
-    ├── Policy verification (Deterministic predicates)
-    ├── Intent alignment (Hard constraints + spirit check)
-    ├── Freshness verification (TOCTOU guard)
-    ├── Behavioral trajectory guard (Rate limits, retry circuit breakers)
-    ├── Exactly-once execution protection (Idempotency keys + inbox dedup)
-    └── Evidence ledger (Hash-chained replayable proofs)
-    ↓
-RAZORPAY (TEST MODE ONLY)
-```
-
----
-
-## Important Security Warning: Razorpay Test Mode Only
 
 > [!WARNING]
-> **CaptureLock is an engineering prototype and strictly restricted to Razorpay TEST MODE (`rzp_test_`).**
-> Real monetary transactions, live API keys, and production credit rails are strictly prohibited. Configuration schemas actively reject keys lacking the `rzp_test_` prefix.
+> **Razorpay TEST MODE only.** A live-mode key is refused in three independent
+> places: the integrations schema, the client constructor, and the API's
+> configuration loader at boot. The default payment adapter is a deterministic
+> fake, so a fresh checkout cannot reach a real API without being explicitly
+> configured to. This is an engineering prototype, not a production system.
 
 ---
 
-## Current Status: Phase 0 Environment Bootstrap
+## What it does
 
-This repository is currently in **Phase 0 (Environment Bootstrap)**:
+An agent proposes SKUs and quantities. It does **not** propose prices, its own
+budget, which policy applies, or what time it is — the request schemas have no
+field for any of those. CaptureLock reads live merchant state, prices the cart
+itself, and issues an opaque quote. At release the agent can only point at that
+quote.
 
-- [x] Monorepo workspace structure (`apps/*`, `packages/*`).
-- [x] TypeScript strict compilation (`NodeNext`).
-- [x] Tooling, linting, and formatting pipelines (ESLint 9, Prettier, Vitest).
-- [x] Local PostgreSQL 16 container definition via Docker Compose.
-- [x] Fastify API scaffold with `/health` and status endpoints.
-- [x] Foundational domain schemas, contracts, and interfaces (`@capturelock/core`, `@capturelock/policy`, `@capturelock/evidence`, `@capturelock/integrations`).
-- [x] Documentation skeleton and research foundations.
-- [ ] _Product implementation (verification pipeline, policy compiler, live Razorpay adapter) will begin in Phase 1 upon review._
-
----
-
-## Project Structure
+Verification then runs **twice**: once when the payable order is created, and
+again at capture against a _fresh_ live merchant read. That second run is where
+the product earns its name — an order approved a minute ago is refused now if the
+price moved.
 
 ```
-.
-├── apps/
-│   ├── api/                  # Fastify HTTP service & webhook handler
-│   └── web/                  # Operator console (reserved placeholder)
-├── packages/
-│   ├── core/                 # Core domain types, schemas, and verdict contracts
-│   ├── policy/               # Policy rules, constraints, and compiler contracts
-│   ├── evidence/             # Evidence envelope & replayable ledger interfaces
-│   └── integrations/         # Razorpay Test Mode & live state provider contracts
-├── docs/
-│   ├── architecture/         # OVERVIEW, THREAT_MODEL, DATA_MODEL, STATE_MACHINE
-│   ├── security/             # SECURITY_MODEL
-│   ├── evaluation/           # EVALUATION_PLAN (20 scripted scenarios)
-│   ├── research/             # Protocol analysis (ACP/AP2/UCP) & TOCTOU research
-│   └── decisions/            # Architecture Decision Records (ADR-001)
-├── tests/
-│   ├── integration/          # Workspace contract & integration tests
-│   ├── adversarial/          # Reserved for adversarial scenario fixtures
-│   └── fixtures/             # Deterministic catalogs, policies, and mock webhooks
-├── docker/                   # PostgreSQL initialization scripts
-├── docker-compose.yml        # Local PostgreSQL 16 infrastructure
-├── AGENTS.md                 # 18 non-negotiable rules for AI coding agents
-├── CLAUDE.md                 # Quick-reference guide & commands
-├── CONTRIBUTING.md           # Development workflow & quality gates
-└── package.json              # Monorepo scripts & dependencies
+                              ┌──────────────────────────┐
+ agent: SKUs + quantities ───►│  resolveContext()        │ ◄── live merchant read
+                              │        │                 │     (all I/O here)
+                              │        ▼                 │
+                              │  evaluate(ctx)   ◄────── │  pure: no I/O, no clock,
+                              │   STRUCTURAL             │  no randomness
+                              │   AUTHORITY              │
+                              │   SNAPSHOT               │
+                              │   INTENT   ◄── live truth, not agent claims
+                              │   POLICY                 │
+                              │   FRESHNESS              │
+                              │   EXECUTION              │
+                              │        ▼                 │
+                              │  ALLOW / PAUSE / DENY    │
+                              │        ▼                 │
+                              │  signed evidence         │
+                              │  mintGrant() ◄─ ALLOW only
+                              └──────────┬───────────────┘
+                                         ▼
+                              Razorpay (TEST MODE)
 ```
 
----
+## Evaluation
 
-## Prerequisites
+`pnpm eval` runs 24 committed scenarios twice — once unmediated, once gated —
+against the identical world:
 
-- **Node.js**: `>= 20.0.0` (Node 24 recommended)
-- **pnpm**: `>= 9.0.0` (pnpm 11 recommended)
-- **Docker & Docker Compose**: For local PostgreSQL 16 service
+|                                      | Baseline (no verification) | CaptureLock    |
+| ------------------------------------ | -------------------------- | -------------- |
+| Unsafe charges                       | 16                         | **0**          |
+| Unauthorized spend                   | ₹90,483.00                 | **₹0.00**      |
+| Live state re-checked before capture | never                      | every scenario |
+| Decisions reproducible from evidence | 0                          | 24 / 24        |
 
----
+Nominal scenarios wrongly refused: **0 of 4**.
 
-## Quickstart & Available Commands
+These are results of our own committed scenario suite. They show the system
+behaves as designed on cases we chose; they are **not** a measurement of real
+agent behaviour. See [`docs/evaluation/EVALUATION_PLAN.md`](docs/evaluation/EVALUATION_PLAN.md).
 
-### 1. Installation
+## Design decisions worth knowing about
+
+|                                                    |                                                                                                                                                                                                               |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The kernel is a pure function.**                 | No I/O, no clock, no randomness. That is what makes a decision replayable from evidence, and it is enforced by a lint rule and an architecture test, not just intended.                                       |
+| **Stages cannot approve anything.**                | A stage reports findings; one combiner decides. ALLOW requires every mandatory stage to have completed with nothing found. A stage that throws yields DENY — tested by injecting a fault into every position. |
+| **Freshness compares terms, not memories.**        | Not "does the agent's remembered hash match live?" — a malicious agent just sends the current hash. It is "do the terms about to be charged match what the merchant will honour now?"                         |
+| **Duplicate prevention is a database constraint.** | A partial unique index allows one non-terminal release per authorization. Ten concurrent requests: one succeeds, nine are rejected by Postgres.                                                               |
+| **Indeterminate is not failure.**                  | Razorpay's capture is not idempotent and its order create rejects duplicate receipts, so a blind retry is _wrong_. There is no edge back into an in-flight state; recovery asks the provider what it knows.   |
+| **Probabilistic components may only restrict.**    | The advisory intent layer can lower a verdict, never raise one. A prompt-injected reviewer cannot approve anything, and the "fail open or closed on timeout?" question dissolves.                             |
+
+## Quickstart
 
 ```bash
 pnpm install
-```
-
-### 2. Environment Configuration
-
-Copy the template configuration:
-
-```bash
 cp .env.example .env
+
+pnpm db:up && pnpm db:migrate   # Postgres schema from scratch
+pnpm dev                        # API on :3000, Postgres, fake provider
+
+pnpm scenario       # 7 end-to-end lifecycle scenarios
+pnpm eval           # baseline vs CaptureLock → reports/
+
+pnpm test           # 430 tests, offline, no Docker
+pnpm test:db        # 23 tests against real Postgres
+pnpm smoke:razorpay # opt-in, needs real rzp_test_ keys
+
+pnpm typecheck && pnpm lint && pnpm format:check && pnpm build
 ```
 
-_(All variables in `.env.example` contain dummy placeholders for local development.)_
+### Walk the price-drift refusal end to end
 
-### 3. Start Local Database
+The one that matters: approved at the order gate, refused at capture, provider
+never called.
 
 ```bash
-pnpm db:up
+AGENT='-H content-type:application/json -H x-capturelock-user:user_priya -H x-capturelock-session:sess_01'
+ISSUER="$AGENT -H x-capturelock-issuer-key:dev-issuer-key-not-for-production"
+
+# 1. the USER's application issues the mandate. The agent cannot do this —
+#    without the issuer key it gets 403, which is the point.
+AUTH=$(curl -s $ISSUER -XPOST localhost:3000/v1/authorizations \
+  -d @docs/examples/authorization.json | jq -r .authorizationId)
+
+# 2. the agent proposes SKUs. CaptureLock prices the cart from live state.
+SNAP=$(curl -s $AGENT -XPOST localhost:3000/v1/authorizations/$AUTH/quotes \
+  -d '{"merchantId":"merchant_alpha","lines":[{"sku":"SKU-BLK-RUN-42","quantity":1}],
+       "shipTo":{"country":"IN","region":null},"recurring":false}' | jq -r .snapshotId)
+
+# 3. gate 1 → ALLOW, order created. No money has moved.
+REL=$(curl -s $AGENT -XPOST localhost:3000/v1/releases \
+  -d "{\"authorizationId\":\"$AUTH\",\"snapshotId\":\"$SNAP\",\"idempotencyKey\":\"idem-demo-0000001\"}" \
+  | jq -r .releaseId)
+
+# 4. the payer authorizes (a genuinely signed webhook through the real route)
+curl -s -XPOST localhost:3000/v1/dev/simulate-authorization \
+  -H 'content-type: application/json' -d "{\"releaseId\":\"$REL\"}" | jq -r .webhook.state
+
+# 5. the merchant raises the price
+curl -s -XPOST localhost:3000/v1/dev/catalog -H 'content-type: application/json' \
+  -d '{"kind":"SET_PRICE","sku":"SKU-BLK-RUN-42","unitPriceMinor":549900}' >/dev/null
+
+# 6. gate 2 → 422 DENY, LIVE_PRICE_DIVERGED. The provider is never called.
+curl -s $AGENT -XPOST localhost:3000/v1/releases/$REL/capture \
+  -d '{"idempotencyKey":"idem-demo-0000002"}' | jq '{verdict, state, reasonCodes, moneyMoved}'
+
+# 7. replay that refusal from its evidence
+curl -s localhost:3000/v1/evidence/<envelopeId> | jq .replay   # → {"reproduced": true}
 ```
 
-### 4. Run Development Server
+Or just run `pnpm scenario 2-price-drift`.
 
-```bash
-pnpm dev
+## API
+
+|                                      |                                                         |
+| ------------------------------------ | ------------------------------------------------------- |
+| `POST /v1/authorizations`            | create a mandate from structured constraints            |
+| `GET /v1/authorizations/:id`         |                                                         |
+| `POST /v1/authorizations/:id/quotes` | server-priced quote from a live merchant read           |
+| `POST /v1/releases`                  | **gate 1** — create the payable order                   |
+| `POST /v1/releases/:id/capture`      | **gate 2 — money moves here, on ALLOW only**            |
+| `POST /v1/releases/:id/reconcile`    | resolve an indeterminate release by asking the provider |
+| `GET /v1/releases/:id`               | release state and its evaluation history                |
+| `POST /v1/reviews/:id/resolve`       | operator resolves a PAUSE; approval re-verifies         |
+| `POST /v1/webhooks/razorpay`         | HMAC over raw bytes, deduplicated by event id           |
+| `GET /v1/evidence/:id`               | envelope plus a live replay check                       |
+| `GET /v1/evidence/chain/:id/verify`  | verify an authorization's chain                         |
+| `GET /v1/evidence/public-key`        | the Ed25519 key an auditor needs                        |
+
+No endpoint moves money without passing the kernel. There is no override flag.
+`POST /v1/dev/*` exists only when the provider is the fake and the environment is
+not production.
+
+## Layout
+
+```
+packages/core          domain model, money, canonical hashing, ports    (no I/O)
+packages/policy        deterministic rule evaluation                    (pure)
+packages/kernel        pipeline, stages, combiner, FSM, services
+packages/evidence      signed hash chain, replay verification
+packages/integrations  Razorpay adapter + deterministic fakes
+packages/persistence   SQL schema, Postgres and in-memory repositories
+apps/api               thin HTTP layer
+apps/eval              baseline-versus-CaptureLock harness
+docs/decisions         ADR-001..010 — why, and what was rejected
 ```
 
-The API server will listen on `http://localhost:3000`. Test the healthcheck endpoint:
+## What is NOT guaranteed
 
-```bash
-curl http://localhost:3000/health
-```
+A verification system that overstates itself is worse than one that does not
+exist. In full in [`docs/security/SECURITY_MODEL.md`](docs/security/SECURITY_MODEL.md); the short list:
 
-### 5. Quality Gate Commands
-
-```bash
-pnpm test          # Run Vitest test suite
-pnpm typecheck     # Verify TypeScript project references
-pnpm build         # Build all packages and applications
-pnpm lint          # Lint codebase with ESLint
-pnpm format:check  # Validate Prettier formatting
-pnpm format        # Auto-format all code and documentation
-```
-
----
+- **Not exactly-once end to end.** At-most-once money movement, plus
+  eventually-consistent knowledge of settlement. After an indeterminate capture
+  we do not know whether money moved until reconciliation succeeds.
+- **Capture semantics are unverified against the live API.** The smoke test
+  never captures. Order semantics _were_ measured, and two documented behaviours
+  turned out wrong — reason to treat the unmeasured half with the same suspicion.
+- **Grant single-use is per-process.** Two API instances do not share a
+  consumed-nonce set.
+- **Signing-key compromise forges history.** The key is a local environment
+  variable here.
+- **Freshness is only as good as the live read**, and ours is a deterministic
+  fake. A real merchant feed could itself be stale.
+- **Normalization error is undetectable.** Constraints that do not match what the
+  user meant are enforced correctly and wrongly.
+- **Concurrency is proven for one process against one database.** Partitions and
+  failover are untested.
+- **No external security review**, penetration test, or compliance assessment.
 
 ## License
 
-MIT License. Developed for the Razorpay AI Buildathon 2026.
+MIT. Developed for the Razorpay AI Buildathon 2026.

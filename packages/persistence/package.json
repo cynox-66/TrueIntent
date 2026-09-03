@@ -1,0 +1,32 @@
+{
+  "name": "@capturelock/persistence",
+  "version": "0.0.1",
+  "private": true,
+  "description": "CaptureLock persistence: schema, migrations, and repository implementations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@capturelock/core": "workspace:*",
+    "@capturelock/evidence": "workspace:*",
+    "@capturelock/policy": "workspace:*",
+    "zod": "^3.24.2",
+    "pg": "^8.13.3",
+    "@capturelock/kernel": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3",
+    "@types/pg": "^8.11.11"
+  }
+}

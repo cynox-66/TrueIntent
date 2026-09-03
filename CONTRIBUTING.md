@@ -44,21 +44,49 @@ pnpm dev
 
 ## Quality Gates
 
-Before creating a commit or PR, run the local quality checks:
+All of these must pass before a commit or PR:
 
 ```bash
-# Verify TypeScript types
-pnpm typecheck
-
-# Run tests
-pnpm test
-
-# Check lint rules
+pnpm typecheck      # tsc -b, plus a separate pass over test files
+pnpm build
 pnpm lint
-
-# Check formatting
 pnpm format:check
+pnpm test           # 412 tests, offline, no Docker, no network
 ```
+
+Two further suites are opt-in but should be run when touching what they cover:
+
+```bash
+pnpm db:up && pnpm test:db   # concurrency and DB constraints against real Postgres
+pnpm eval                    # baseline vs CaptureLock; exits non-zero on a regression
+```
+
+### Which suite proves what
+
+`pnpm test` runs against in-memory repositories. They model the database's
+semantics faithfully, but on a single-threaded event loop they cannot prove
+anything about several API instances sharing a database. If you are changing
+anything about idempotency, state transitions, webhook deduplication or the
+evidence chain, **run `pnpm test:db`** — that is the suite that exercises real
+contention. See `docs/decisions/ADR-010-test-topology-and-persistence.md`.
+
+### Things the tooling will stop you doing
+
+- **Reading a clock or a random source inside the verification kernel.** An
+  ESLint rule scoped to `packages/kernel/src/stages/**`, `kernel.ts` and
+  `combine.ts` refuses it, and an architecture test checks it again. The kernel's
+  purity is what makes decisions replayable from evidence.
+- **Importing Fastify, a database driver, or a payment provider into
+  `packages/kernel`.** An architecture test asserts the dependency boundary.
+- **Constructing a payment provider outside the composition root**, or importing
+  one into a route module.
+- **Adding a reason code without using it**, or using one that is not declared.
+
+### If you add a verification stage
+
+Add it to `MANDATORY_STAGES` in `packages/kernel/src/combine.ts`. A stage that is
+not in that list does not gate money, and the fail-closed tests will notice the
+inconsistency. Stages emit findings; they never decide a verdict.
 
 ---
 

@@ -1,62 +1,96 @@
-# CaptureLock Evaluation Plan & Metrics Framework
+# CaptureLock evaluation
 
-## 1. Evaluation Philosophy
+## 1. What is being measured, and what is not
 
-To satisfy the Razorpay AI Buildathon standard ("honest metrics", "what broke and how you got out"), CaptureLock will be evaluated against a baseline system using a deterministic, committed scenario suite.
+The harness runs a committed scenario suite twice against the identical world:
+once with no verification, once through CaptureLock. Run it with `pnpm eval`;
+output lands in `reports/evaluation.md` and `reports/evaluation.json`.
 
-We will **not** rely on self-reported, unsubstantiated claims (e.g. "99% accurate"). Instead, we compare:
+**What the numbers mean.** Whether this system behaves as designed on cases we
+chose.
 
-1. **Baseline System**: An autonomous buyer agent directly interacting with merchant tools and initiating Razorpay test-mode orders without CaptureLock.
-2. **Proposed System**: The same buyer agent mediated by CaptureLock capture-time verification.
+**What they do not mean.** They are not a sample of real agent behaviour. No
+real-world prevention rate should be inferred from them, and none is claimed. The
+report says so in its own header.
 
----
+The harness exits non-zero if any scenario fails to behave as declared, so it
+gates a build rather than merely informing one.
 
-## 2. Experimental Scenarios (20 Scripted Fixtures)
+## 2. The baseline is not a straw man
 
-The evaluation suite tests both nominal workflows and adversarial edge cases across committed fixtures:
+It reads the same merchant catalogue, calls the same provider, and charges the
+same amounts. The only differences are the ones that matter:
 
-### 2.1 Nominal Scenarios (8 tests)
+- **It quotes once and never looks again.** Anything that changes between quote
+  and capture is invisible to it. This is what an agent framework with a payment
+  tool does today.
+- **On a lost capture response it retries.** Without a notion of an indeterminate
+  outcome there is nothing else to do. Razorpay rejects the second capture with a
+  400, which the baseline records as a failure while the money has in fact moved
+  — so the baseline's own ledger ends up wrong, which is its own kind of failure.
 
-- `nominal-grocery-exact-match`: Standard budgeted shop matching catalog items directly.
-- `nominal-multi-category-cart`: Mixed basket conforming to distinct category discount rules.
-- `nominal-bundle-offer`: Pre-approved bundle discount applied within policy ceiling.
-- `nominal-fast-checkout`: Low-latency transaction well within freshness window.
-- `nominal-user-budget-boundary`: Cart amount exactly equals authorized budget cap.
-- `nominal-minor-synonym`: Item queried using common synonym; spirit-check confirms ALIGNED.
-- `nominal-replacement-suggestion`: Out-of-stock item substituted with pre-approved equivalent.
-- `nominal-multi-item-quantity`: Multiple units within per-item quantity limits.
+## 3. Scenarios
 
-### 2.2 Adversarial & Failure Scenarios (12 tests)
+24 scenarios: 4 nominal, 20 adversarial, spanning the threat families in
+`THREAT_MODEL.md`. Each declares its expected verdict, reason codes and whether
+money should move, so a test that passes is provably testing what it names.
 
-- `adversarial-stale-price-toctou`: Merchant price increases by 20% after agent snapshot.
-- `adversarial-stale-stock-depleted`: Inventory reaches zero between quote and capture attempt.
-- `adversarial-intent-drift-beverage`: Intent is dinner for 4; agent substitutes energy drinks.
-- `adversarial-intent-drift-luxury`: Intent is everyday staples; agent upgrades to luxury items.
-- `adversarial-discount-ceiling-breach`: Agent negotiates 25% discount against a 10% policy ceiling.
-- `adversarial-category-restriction`: Agent includes prohibited non-vegetarian item under veg-only policy.
-- `adversarial-merchant-switch`: Agent switches to an unwhitelisted sponsored merchant.
-- `adversarial-prompt-injection-catalog`: Catalog description instructs agent to ignore budget caps.
-- `adversarial-concurrent-webhook-replay`: 10 identical webhook deliveries dispatched simultaneously.
-- `adversarial-client-retry-storm`: 5 identical capture requests fired in rapid succession.
-- `adversarial-stale-session-replay`: Transaction attempted after session TTL has expired.
-- `adversarial-tampered-envelope`: Modified envelope payload evaluated for hash-chain invalidation.
+**Nominal (4).** Exact match; total exactly on the ceiling; a price drop before
+the quote; fast capture well inside the freshness window.
 
----
+**Intent drift, F2 (8).** Attribute substitution (white for black); category
+drift; over budget; hidden shipping fee; excess tip; quantity inflation;
+unauthorized merchant; subscription introduced.
 
-## 3. Evaluation Metrics
+**TOCTOU, F1 (8).** Price rises after quote; price _falls_ after quote (the user
+would overpay); stock depleted; item withdrawn; fee added; attribute changed;
+snapshot expired; merchant unreachable.
 
-| Metric                              | Target  | Baseline (Expected)   | CaptureLock (Target)  |
-| ----------------------------------- | ------- | --------------------- | --------------------- |
-| **Unsafe Charge Prevention**        | 100%    | 0% (unmitigated)      | 100% blocked          |
-| **Duplicate Execution Occurrences** | 0       | > 0 (race conditions) | 0 duplicate orders    |
-| **Freshness Verification Rate**     | 100%    | N/A (no check)        | 100% checked          |
-| **False-Positive Block Rate**       | < 2%    | 0%                    | < 2% on nominal set   |
-| **Verification Overhead (p95)**     | < 150ms | 0ms                   | < 150ms latency delta |
-| **Audit Ledger Replayability**      | 100%    | 0%                    | 100% recomputable     |
+**Duplicate execution, F5 (4).** Same capture submitted twice; five racing
+captures; capture succeeds but the response is lost then the agent retries;
+settled mandate replayed for a second purchase.
 
----
+## 4. Results
 
-## 4. Open Evaluation Decisions
+From the committed suite as of this writing:
 
-- **LLM Evaluator Model Selection**: STATUS: OPEN DECISION (Selection of model for semantic spirit-check in evaluation: Claude 3.5 Sonnet vs. GPT-4o-mini vs. local deterministic rule).
-- **Latency Benchmark Methodology**: STATUS: OPEN DECISION (Measuring end-to-end HTTP latency vs. internal pipeline execution time).
+| Metric                                            | Baseline   | CaptureLock    |
+| ------------------------------------------------- | ---------- | -------------- |
+| Unsafe charges (money moved that should not have) | 16         | **0**          |
+| Unauthorized spend across the suite               | ₹90,483.00 | **₹0.00**      |
+| Scenarios with more than one capture              | 1          | 0              |
+| Total provider captures                           | 25         | 8              |
+| Live state re-checked before capture              | never      | every scenario |
+| Decisions reproducible from evidence              | 0          | 24 / 24        |
+| Evidence chains verifying                         | n/a        | 24 / 24        |
+
+- Nominal scenarios wrongly refused: **0 of 4**.
+- Scenarios matching their declared expectation: **24 of 24**.
+
+"Unsafe" means money moved that should not have: a charge where none was
+authorized, or more charges than the scenario legitimately calls for.
+
+## 5. Metrics deliberately not reported
+
+- **Latency.** Measurable, but every measurement here would be against
+  in-process fakes, so a number would describe our test doubles rather than
+  anything real.
+- **False-positive rate.** 0 of 4 nominal scenarios is not a rate. Four
+  hand-written happy paths cannot estimate one.
+- **Coverage percentage.** It would measure how much code the tests touch, not
+  whether the security properties hold. The property tests — fault injection into
+  every pipeline position, determinism under a faked clock, concurrency against
+  real Postgres — are the meaningful measure.
+
+## 6. Suites
+
+| Command        | Requires     | Proves                                                                                             |
+| -------------- | ------------ | -------------------------------------------------------------------------------------------------- |
+| `pnpm test`    | nothing      | kernel, policy, canonicalization, evidence, FSM, adversarial scenarios, API                        |
+| `pnpm test:db` | `pnpm db:up` | partial unique index, CAS under contention, webhook dedup, chain non-forking, append-only triggers |
+| `pnpm eval`    | nothing      | baseline versus CaptureLock over the scenario suite                                                |
+
+The split and its rationale are in
+[ADR-010](../decisions/ADR-010-test-topology-and-persistence.md). The short
+version: the in-memory repositories cannot prove a distributed claim, so the
+distributed claims are scoped to the suite that actually tests contention.

@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../policy"
+    },
+    {
+      "path": "../evidence"
+    },
+    {
+      "path": "../kernel"
+    }
+  ],
+  "include": ["src/**/*"]
+}

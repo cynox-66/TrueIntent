@@ -36,3 +36,6 @@ Thumbs.db
 
 # Test Artifacts
 vitest.results.json
+
+# Generated evaluation output
+reports/

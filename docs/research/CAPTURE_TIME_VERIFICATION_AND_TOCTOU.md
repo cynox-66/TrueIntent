@@ -1,5 +1,22 @@
 # Capture-Time Verification, Freshness, and TOCTOU in Agentic Commerce
 
+> [!IMPORTANT]
+> **§2's "Row-Hashing Solution" was superseded during implementation.** Comparing
+> an agent-supplied `sourceRowHash` against the live row hash defends only against
+> an _honest_ agent holding stale data: a malicious one reads the current hash and
+> sends that, and the check passes while looking like it worked. The implemented
+> defence compares **the terms about to be charged against the terms the merchant
+> will honour now**, and CaptureLock issues the snapshot rather than accepting one.
+> Row hashes remain, computed by us, for drift attribution in the evidence.
+> See [ADR-008](../decisions/ADR-008-freshness-proposed-versus-live.md).
+>
+> **§3's Tier 2 "Advisory Spirit Check" was also narrowed.** It may only restrict a
+> verdict, never grant one. See [ADR-009](../decisions/ADR-009-advisory-layer-restriction-only.md).
+>
+> The framing in §1 — that authorization and capture are separated by minutes of
+> agent reasoning, and that the gap is the problem — is what the whole system is
+> built on and is unchanged.
+
 ## 1. Pre-Authorization vs. Capture-Time Verification
 
 In human commerce, authorization and capture typically happen in near-synchrony: a user reviews a checkout page and clicks "Pay".

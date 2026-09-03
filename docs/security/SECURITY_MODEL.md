@@ -1,56 +1,127 @@
-# CaptureLock Security Model
+# CaptureLock security model
 
-## 1. Fundamental Security Principles
+## 1. The invariants
 
-CaptureLock enforces five foundational security invariants:
+1. **The agent never has final authority over money.** Every decision is made by
+   a deterministic function operating on server-resolved data.
+2. **The agent cannot state a security-relevant value.** No price, no total, no
+   intent, no policy version, no timestamp. The request schemas are `.strict()`,
+   so an attempt is a validation failure rather than something ignored.
+3. **Default deny.** ALLOW requires a completed run of every mandatory stage with
+   no findings. Anything else refuses.
+4. **No exception path can approve.** A stage that throws becomes a recorded
+   `ERRORED` outcome plus a DENY finding.
+5. **At most once, honestly scoped.** At-most-once money movement enforced by
+   database constraints; eventually-consistent knowledge of settlement. Not
+   end-to-end exactly-once — see §5.
+6. **Every decision is reproducible.** The kernel is pure, so an auditor can
+   re-run it from stored evidence and compare hashes.
+7. **Probabilistic components may only restrict.** The advisory layer can lower a
+   verdict and never raise one.
 
-1. **Zero LLM Payment Authority**: LLMs are probabilistic reasoning engines subject to prompt injection, hallucination, and jailbreaks. Under no circumstance does an LLM possess direct execution authority over financial rails.
-2. **Deterministic Primacy**: All financial, mathematical, policy, and state decisions are enforced by compiled, deterministic code.
-3. **Continuous Freshness**: No authorization token or cart snapshot is trusted without live re-verification against the merchant's authoritative state at the moment of charge.
-4. **Exactly-Once Semantics**: All mutations carry composite idempotency keys, and incoming asynchronous webhooks pass through atomic deduplication.
-5. **Replayable Evidence Chaining**: Every decision emits an immutable, cryptographically verifiable proof envelope that can be audited offline.
-
----
-
-## 2. Multi-Layer Defense Architecture
+## 2. Layers
 
 ```
-Layer 5: Evidence Ledger (Hash-chained audit trail & offline replayability)
-   ▲
-Layer 4: Exactly-Once Execution (Idempotency keys, webhook inbox deduplication)
-   ▲
-Layer 3: Behavioral Trajectory Guard (Velocity ceilings, retry circuit breakers)
-   ▲
-Layer 2: Freshness Revalidator (TOCTOU guard, live row-hash comparison)
-   ▲
-Layer 1: Deterministic Policy Engine (Discount caps, category rules, budget limits)
-   ▲
-Layer 0: Input Sanitization & Schema Validation (Strict Zod validation at boundaries)
+6  Evidence          Ed25519-signed hash chain, replayable, append-only by trigger
+5  Exactly-once      partial unique index, CAS, webhook inbox, write-ahead states
+4  Freshness         live merchant re-read at both gates; unreachable ⇒ refuse
+3  Policy            operator rules; unknown or inapplicable rule ⇒ refuse
+2  Intent            user constraints, checked against LIVE state not agent claims
+1  Authority         authorization validity, ownership, session, hash integrity
+0  Structural        schema validation, recomputed arithmetic, currency consistency
+────────────────────────────────────────────────────────────────────────────────
+   Advisory          OUTSIDE the kernel; may only restrict, never grant
 ```
 
----
+## 3. Where each attack stops
 
-## 3. Threat Mitigations in Detail
+**A compromised agent tries to overspend.** It cannot say what its budget is —
+there is no field. The constraints are loaded by id and `intentHash` is
+re-verified, so editing the database row is detected. The cart total is
+recomputed from server-priced line items, and the intent stage compares it against
+the authorized ceiling. `INTENT_TOTAL_EXCEEDED`, DENY, before any provider call.
 
-### 3.1 Prompt Injection Isolation
+**A merchant raises the price a second before capture.** The capture gate reads
+live state fresh and compares the live unit price against the price about to be
+charged. `LIVE_PRICE_DIVERGED`, DENY. The comparison is proposed-versus-live, not
+remembered-hash-versus-live, so a malicious agent cannot fabricate freshness.
 
-- **Mechanism**: The buyer agent interacts with external catalogs and user prompts, making its context vulnerable to indirect prompt injection. CaptureLock never parses the agent's internal reasoning or natural language output to authorize payments. Instead, it only receives structured JSON payloads (`CartSnapshot`) containing specific SKUs, quantities, and observed row hashes.
-- **Guarantee**: Even if the buyer agent is completely compromised, CaptureLock validates the cart against the user's compiled hard constraints (budget, merchant whitelist, category whitelist) and live catalog truth.
+**Two requests arrive simultaneously.** `releases_one_active_per_authorization`
+rejects the second insert; a compare-and-set decides the winner of any state
+transition. The guarantee is a database constraint, not application logic.
 
-### 3.2 Webhook Signature & Replay Defense
+**The provider times out after receiving a capture.** The release is in
+`CAPTURE_IN_FLIGHT`, committed before the call. There is no edge back into an
+in-flight state, so no retry is expressible. Reconciliation calls `getPayment`
+and adopts the provider's answer.
 
-- **Signature Verification**: Every incoming webhook from Razorpay is validated against `RAZORPAY_WEBHOOK_SECRET` using HMAC-SHA256 before any body parsing occurs.
-- **Atomic Inbox Deduplication**: Razorpay delivers webhooks with at-least-once semantics. The `webhook_inbox` table enforces `UNIQUE(event_id)`. If an event is received twice, the second attempt conflicts at the database constraint level and is discarded with an acknowledgement.
+**Someone edits an evidence record.** The recomputed chain hash no longer matches,
+and if they fix the hash too, the Ed25519 signature fails. The Postgres triggers
+reject the `UPDATE` outright.
 
-### 3.3 Secrets & Environment Isolation
+**A prompt-injected reviewer says "approve".** It cannot. The advisory layer's
+severity floor means its judgement can only ever lower the verdict.
 
-- Real merchant credentials and live payment keys are never used.
-- Keys must begin with `rzp_test_`. Any attempt to configure keys with `rzp_live_` is actively rejected at the configuration schema level.
-- Secrets are loaded strictly via environment variables and never logged.
+## 4. Separation of authority
 
----
+The kernel faithfully enforces whatever mandate it is given. Nothing it does
+prevents an agent from _writing its own mandate_ — that has to be prevented at
+the boundary, and in Phase 1 it was not.
 
-## 4. Open Security Decisions
+| authority | header                            | may do                                        |
+| --------- | --------------------------------- | --------------------------------------------- |
+| principal | `x-capturelock-user` / `-session` | quote, request a release, request a capture   |
+| issuer    | `x-capturelock-issuer-key`        | create an authorization                       |
+| operator  | `x-capturelock-operator-key`      | resolve a paused review, force reconciliation |
 
-- **Evidence Envelope Signing Key Management**: STATUS: OPEN DECISION (Selection of key management approach for signing evidence envelopes — local private key in HSM/KMS vs. local environment key for prototype).
-- **Public Key Distribution for Offline Replay**: STATUS: OPEN DECISION (Protocol for third-party dispute reviewers to verify envelope signatures).
+An agent holds only the first. Without the split, an agent could mint a mandate
+with its own budget, or clear its own PAUSE — either of which makes every
+downstream check ceremonial. Identity is always taken from the authenticated
+principal, never from a request body; comparison is constant-time; production
+refuses to start without real keys.
+
+## 5. Test-mode enforcement
+
+Three independent refusals of a live Razorpay key: the Zod schema in
+`packages/integrations`, the `RazorpayTestClient` constructor, and the API's
+configuration loader at boot. One check is one thing to accidentally delete.
+
+The default payment adapter is the deterministic fake, so a fresh checkout cannot
+reach a real API without being explicitly configured to.
+
+## 6. What is NOT guaranteed
+
+Stated plainly, because a verification system that overstates itself is worse
+than one that does not exist.
+
+- **Not exactly-once end to end.** After an indeterminate capture, whether the
+  money moved is unknown to us until reconciliation succeeds. If the provider
+  stays unreachable the release stays stuck, which is correct and is a human's
+  problem to resolve.
+- **Signing-key compromise forges history.** In this prototype the key is a local
+  environment variable.
+- **A head witness only helps if the client kept it.** Truncation of the whole
+  chain is undetectable without an independently held head.
+- **Freshness is only as good as the live read.** The provider is a deterministic
+  fake; a real feed could itself be stale, and CaptureLock would verify against
+  the stale value faithfully.
+- **Normalization error is not detectable.** Constraints that do not match what
+  the user meant will be enforced correctly and wrongly.
+- **Concurrency is proven for one process against one database.** Network
+  partitions, failover and multi-region are untested.
+- **The shipped advisory reviewer is a lexical heuristic**, not an intent
+  classifier.
+- **Capture semantics are unverified against the live API.** The smoke test
+  never captures, so the non-idempotent-capture behaviour underpinning
+  `CAPTURE_INDETERMINATE` rests on documentation alone. Order semantics _were_
+  measured, and two documented behaviours turned out to be wrong
+  ([ADR-015](../decisions/ADR-015-razorpay-reality.md)) — which is reason to
+  treat the unmeasured half with the same suspicion.
+- **Grant single-use is per-process.** Two API instances do not share a
+  consumed-nonce set. Double capture is still prevented by the state machine and
+  the database constraints, but not by that mechanism.
+- **A release stranded mid-provider-call stays unresolved for up to a minute**,
+  by design: an empty order lookup is not proof of absence, because the
+  provider's search index lags its writes.
+- **This is a prototype.** It has not been through an external security review,
+  a penetration test, or any compliance assessment.

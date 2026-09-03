@@ -1,0 +1,67 @@
+{
+  "rawIntent": "Find me the cheapest pair of black running shoes under 5,000 rupees.",
+  "policyId": "household_default",
+  "policyVersion": "1.0.0",
+  "constraints": {
+    "currency": "INR",
+    "maxTotal": {
+      "currency": "INR",
+      "amountMinor": 500000
+    },
+    "maxUnitPrice": {
+      "currency": "INR",
+      "amountMinor": 500000
+    },
+    "quantity": {
+      "min": 1,
+      "max": 1
+    },
+    "allowedCategories": ["footwear"],
+    "forbiddenCategories": [],
+    "requiredAttributes": [
+      {
+        "name": "colour",
+        "anyOf": ["black"]
+      }
+    ],
+    "forbiddenAttributes": [
+      {
+        "name": "colour",
+        "anyOf": ["white"]
+      }
+    ],
+    "merchants": {
+      "mode": "ALLOWLIST",
+      "merchantIds": ["merchant_alpha"]
+    },
+    "fees": {
+      "maxShipping": {
+        "currency": "INR",
+        "amountMinor": 20000
+      },
+      "maxTax": null,
+      "maxTip": {
+        "currency": "INR",
+        "amountMinor": 10000
+      },
+      "maxConvenienceFee": null,
+      "maxTotalFees": {
+        "currency": "INR",
+        "amountMinor": 30000
+      }
+    },
+    "recurrence": "ONE_TIME_ONLY",
+    "geography": {
+      "allowedCountries": ["IN"],
+      "allowedRegions": null
+    },
+    "maxSnapshotAgeSeconds": 300,
+    "notBefore": "2026-09-03T00:00:00.000Z",
+    "notAfter": "2026-12-31T00:00:00.000Z"
+  },
+  "normalization": {
+    "method": "LLM_ASSISTED",
+    "modelId": "demo-normalizer",
+    "confirmedByUser": true
+  }
+}

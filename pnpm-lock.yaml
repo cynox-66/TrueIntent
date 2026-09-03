@@ -8,9 +8,24 @@ importers:
 
   .:
     devDependencies:
+      '@capturelock/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@capturelock/integrations':
+        specifier: workspace:*
+        version: link:packages/integrations
+      '@capturelock/persistence':
+        specifier: workspace:*
+        version: link:packages/persistence
       '@eslint/js':
         specifier: ^9.20.0
         version: 9.39.5
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       eslint:
         specifier: ^9.20.1
         version: 9.39.5(supports-color@7.2.0)
@@ -44,6 +59,12 @@ importers:
       '@capturelock/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@capturelock/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@capturelock/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
       '@capturelock/policy':
         specifier: workspace:*
         version: link:../../packages/policy
@@ -85,6 +106,43 @@ importers:
         specifier: ^3.0.5
         version: 3.2.7(@types/node@22.20.1)(supports-color@7.2.0)(tsx@4.23.13)
 
+  apps/eval:
+    dependencies:
+      '@capturelock/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@capturelock/evidence':
+        specifier: workspace:*
+        version: link:../../packages/evidence
+      '@capturelock/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
+      '@capturelock/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@capturelock/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
+      '@capturelock/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.13
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.5
+        version: 3.2.7(@types/node@22.20.1)(supports-color@7.2.0)(tsx@4.23.13)
+
   apps/web: {}
 
   packages/core:
@@ -93,6 +151,9 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -102,13 +163,13 @@ importers:
       '@capturelock/core':
         specifier: workspace:*
         version: link:../core
-      '@capturelock/policy':
-        specifier: workspace:*
-        version: link:../policy
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -122,6 +183,68 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/kernel:
+    dependencies:
+      '@capturelock/core':
+        specifier: workspace:*
+        version: link:../core
+      '@capturelock/evidence':
+        specifier: workspace:*
+        version: link:../evidence
+      '@capturelock/policy':
+        specifier: workspace:*
+        version: link:../policy
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      '@capturelock/integrations':
+        specifier: workspace:*
+        version: link:../integrations
+      '@capturelock/persistence':
+        specifier: workspace:*
+        version: link:../persistence
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/persistence:
+    dependencies:
+      '@capturelock/core':
+        specifier: workspace:*
+        version: link:../core
+      '@capturelock/evidence':
+        specifier: workspace:*
+        version: link:../evidence
+      '@capturelock/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@capturelock/policy':
+        specifier: workspace:*
+        version: link:../policy
+      pg:
+        specifier: ^8.13.3
+        version: 8.23.0
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
+      '@types/pg':
+        specifier: ^8.11.11
+        version: 8.23.1
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -135,6 +258,9 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

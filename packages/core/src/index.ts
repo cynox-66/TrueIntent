@@ -1,107 +1,278 @@
 /**
  * @capturelock/core
  *
- * Core Domain Contracts and Types for CaptureLock.
- *
- * NOTE: Phase 0 environment bootstrap only.
- * No product verification logic is implemented here.
+ * Domain model, deterministic primitives, and the ports every outer layer
+ * implements. This package has no dependency on Fastify, Drizzle, or any
+ * payment provider, and nothing in it performs I/O.
  */
 
-import { z } from 'zod';
+export type { Brand } from './brand.js';
 
-/**
- * CaptureLock verification verdict outcomes.
- *
- * ALLOW: All deterministic policies, live state, and intent checks passed. Money movement may proceed.
- * PAUSE: Marginal divergence, ambiguous policy, or trajectory risk detected. Requires human review.
- * DENY:  Explicit violation (stale state, budget exceeded, unauthorized merchant/category, intent divergence).
- */
-export const VerificationVerdictSchema = z.enum(['ALLOW', 'PAUSE', 'DENY']);
-export type VerificationVerdict = z.infer<typeof VerificationVerdictSchema>;
+export {
+  CaptureLockError,
+  CanonicalizationError,
+  InvariantViolation,
+  assertNever,
+  type CaptureLockErrorCode,
+} from './errors.js';
 
-/**
- * Reason codes identifying why a decision was reached.
- */
-export const ReasonCodeSchema = z.enum([
-  'VERIFIED_MATCH',
-  'STALE_PRICE',
-  'STALE_INVENTORY',
-  'BUDGET_EXCEEDED',
-  'UNAUTHORIZED_MERCHANT',
-  'UNAUTHORIZED_CATEGORY',
-  'POLICY_VIOLATION',
-  'INTENT_DIVERGED',
-  'INTENT_MARGINAL',
-  'TRAJECTORY_RATE_LIMIT_EXCEEDED',
-  'TRAJECTORY_RETRY_STORM',
-  'IDEMPOTENCY_CONFLICT',
-  'UPSTREAM_STATE_MISMATCH',
-]);
-export type ReasonCode = z.infer<typeof ReasonCodeSchema>;
+export {
+  canonicalize,
+  hash,
+  hashBytes,
+  asSha256Hex,
+  isSha256Hex,
+  HASH_DOMAINS,
+  type HashDomain,
+  type Sha256Hex,
+} from './canonical.js';
 
-/**
- * Snapshot of user-authorized intent at session initialization.
- */
-export const IntentSnapshotSchema = z.object({
-  rawIntent: z.string().min(1),
-  maxBudgetMinor: z.number().int().positive(),
-  currency: z.string().length(3).default('INR'),
-  authorizedAt: z.string().datetime(),
-  userId: z.string().min(1),
-  mandateReference: z.string().optional(),
-});
-export type IntentSnapshot = z.infer<typeof IntentSnapshotSchema>;
+export {
+  CURRENCY_CODES,
+  CURRENCY_EXPONENTS,
+  CurrencyCodeSchema,
+  CurrencyMismatchError,
+  MAX_AMOUNT_MINOR,
+  MoneyRangeError,
+  MoneySchema,
+  absolute,
+  add,
+  applyBasisPoints,
+  compare,
+  equals,
+  format,
+  isAtMost,
+  isGreaterThan,
+  isLessThan,
+  isNegative,
+  money,
+  multiply,
+  subtract,
+  sum,
+  zero,
+  type CurrencyCode,
+  type Money,
+} from './money.js';
 
-/**
- * Individual item within a captured cart snapshot.
- */
-export const CartItemSnapshotSchema = z.object({
-  sku: z.string().min(1),
-  name: z.string().min(1),
-  quantity: z.number().int().positive(),
-  unitPriceMinor: z.number().int().nonnegative(),
-  category: z.string().optional(),
-  sourceRowHash: z.string().min(1),
-  observedAt: z.string().datetime(),
-});
-export type CartItemSnapshot = z.infer<typeof CartItemSnapshotSchema>;
+export {
+  FixedClock,
+  TimestampSchema,
+  addMillis,
+  addSeconds,
+  asTimestamp,
+  isAfter,
+  isBefore,
+  isTimestamp,
+  millisBetween,
+  systemClock,
+  timestampFromDate,
+  timestampToEpochMillis,
+  type Clock,
+  type Timestamp,
+} from './time.js';
 
-/**
- * Snapshot of the agent's proposed cart before capture.
- */
-export const CartSnapshotSchema = z.object({
-  merchantId: z.string().min(1),
-  items: z.array(CartItemSnapshotSchema).min(1),
-  totalAmountMinor: z.number().int().positive(),
-  currency: z.string().length(3).default('INR'),
-  snapshotHash: z.string().min(1),
-  createdAt: z.string().datetime(),
-});
-export type CartSnapshot = z.infer<typeof CartSnapshotSchema>;
+export {
+  AuthorizationIdSchema,
+  ChainIdSchema,
+  EnvelopeIdSchema,
+  EvaluationIdSchema,
+  ID_PREFIXES,
+  IdempotencyKeySchema,
+  MAX_RECEIPT_LENGTH,
+  MerchantIdSchema,
+  ReceiptSchema,
+  ReleaseIdSchema,
+  RequestIdSchema,
+  ReviewIdSchema,
+  SkuSchema,
+  SnapshotIdSchema,
+  UserIdSchema,
+  asAuthorizationId,
+  asChainId,
+  asEnvelopeId,
+  asReleaseId,
+  asReviewId,
+  asSnapshotId,
+  deriveReceipt,
+  newAuthorizationId,
+  newChainId,
+  newEnvelopeId,
+  newEvaluationId,
+  newReleaseId,
+  newRequestId,
+  newReviewId,
+  newSnapshotId,
+  type AuthorizationId,
+  type ChainId,
+  type EnvelopeId,
+  type EvaluationId,
+  type IdKind,
+  type IdempotencyKey,
+  type MerchantId,
+  type Receipt,
+  type ReleaseId,
+  type RequestId,
+  type ReviewId,
+  type Sku,
+  type SnapshotId,
+  type UserId,
+} from './ids.js';
 
-/**
- * Capture-time verification request input.
- */
-export const CaptureVerificationRequestSchema = z.object({
-  sessionId: z.string().uuid(),
-  idempotencyKey: z.string().min(8),
-  intent: IntentSnapshotSchema,
-  cart: CartSnapshotSchema,
-  policyVersion: z.string().min(1),
-  requestTimestamp: z.string().datetime(),
-});
-export type CaptureVerificationRequest = z.infer<typeof CaptureVerificationRequestSchema>;
+export {
+  REASON_CODES,
+  REASON_CODE_DEFINITIONS,
+  SEVERITY_RANK,
+  isReasonCode,
+  reasonDescription,
+  reasonSeverity,
+  reasonStage,
+  type ReasonCode,
+  type ReasonStage,
+  type Severity,
+} from './reason-codes.js';
 
-/**
- * Structured response from the CaptureLock verification pipeline.
- */
-export const CaptureVerificationResultSchema = z.object({
-  verdict: VerificationVerdictSchema,
-  reasons: z.array(ReasonCodeSchema),
-  envelopeId: z.string().uuid().optional(),
-  evaluatedAt: z.string().datetime(),
-  executionAllowed: z.boolean(),
-  idempotencyKey: z.string(),
-  failureDetails: z.array(z.string()).optional(),
-});
-export type CaptureVerificationResult = z.infer<typeof CaptureVerificationResultSchema>;
+export {
+  AttributeListSchema,
+  AttributePredicateSchema,
+  AttributeSchema,
+  findAttributeValues,
+  hasAttribute,
+  normalizeAttributes,
+  satisfiesPredicate,
+  type Attribute,
+  type AttributePredicate,
+} from './domain/attributes.js';
+
+export {
+  AuthorizationStateSchema,
+  AuthorizedIntentSchema,
+  FeeConstraintsSchema,
+  GeographyConstraintSchema,
+  IntentConstraintsSchema,
+  IntentNormalizationMethodSchema,
+  IntentNormalizationSchema,
+  MerchantConstraintSchema,
+  QuantityBandSchema,
+  RecurrenceConstraintSchema,
+  intentHashInput,
+  type AuthorizationRecord,
+  type AuthorizationState,
+  type AuthorizedIntent,
+  type FeeConstraints,
+  type GeographyConstraint,
+  type IntentConstraints,
+  type IntentNormalization,
+  type IntentNormalizationMethod,
+  type MerchantConstraint,
+  type QuantityBand,
+  type RecurrenceConstraint,
+} from './domain/intent.js';
+
+export {
+  AdjustmentTypeSchema,
+  AgentAssertionSchema,
+  CartAdjustmentSchema,
+  CartLineSchema,
+  FEE_ADJUSTMENT_TYPES,
+  MAX_CART_ADJUSTMENTS,
+  MAX_CART_LINES,
+  ProposedCartSchema,
+  ShipToSchema,
+  cartHashInput,
+  computeCartTotals,
+  isFeeAdjustment,
+  type AdjustmentType,
+  type AgentAssertion,
+  type CartAdjustment,
+  type CartLine,
+  type CartTotals,
+  type ProposedCart,
+  type ShipTo,
+} from './domain/cart.js';
+
+export {
+  liveItemHashInput,
+  liveItemRowHash,
+  liveStateDigest,
+  type LiveFeeQuote,
+  type LiveItemState,
+  type LiveMerchantState,
+  type LiveStateResult,
+} from './domain/live-state.js';
+
+export {
+  SnapshotStateSchema,
+  computeSnapshotHash,
+  snapshotHashInput,
+  snapshotTotalsAreSelfConsistent,
+  verifySnapshotIntegrity,
+  type SnapshotState,
+  type VerifiedSnapshot,
+} from './domain/snapshot.js';
+
+export {
+  STAGE_IDS,
+  compareFindings,
+  computeDecisionHash,
+  decisionHashInput,
+  finding,
+  type Finding,
+  type FindingDetail,
+  type FindingDetailValue,
+  type Gate,
+  type StageId,
+  type StageReport,
+  type StageStatus,
+  type VerificationDecision,
+  type Verdict,
+} from './domain/decision.js';
+
+export {
+  INDETERMINATE_RELEASE_STATES,
+  RELEASE_STATES,
+  ReleaseStateSchema,
+  TERMINAL_RELEASE_STATES,
+  TRANSIENT_RELEASE_STATES,
+  isTerminalReleaseState,
+  isTransientReleaseState,
+  moneyHasMoved,
+  requiresReconciliation,
+  type ReleaseRecord,
+  type ReleaseState,
+} from './domain/release.js';
+
+export type {
+  CaptureOutcome,
+  CapturePaymentRequest,
+  PaymentExecutor,
+  PaymentReader,
+  CreateOrderOutcome,
+  CreateOrderRequest,
+  PaymentProvider,
+  ProviderIndeterminateCause,
+  ProviderOrder,
+  ProviderOrderStatus,
+  ProviderPayment,
+  ProviderPaymentStatus,
+  WebhookVerificationResult,
+  WebhookVerifier,
+} from './ports/payment-provider.js';
+
+export type { FeeQuoteRequest, MerchantStateProvider } from './ports/merchant.js';
+
+export type {
+  AuthorizationRepository,
+  EvaluationRecord,
+  EvaluationRepository,
+  InsertReleaseResult,
+  ReleaseRepository,
+  ReleaseTransitionPatch,
+  ReviewRecord,
+  ReviewRepository,
+  ReviewState,
+  SnapshotRepository,
+  WebhookClaimResult,
+  WebhookInboxRecord,
+  WebhookInboxRepository,
+  WebhookInboxStatus,
+} from './ports/repositories.js';

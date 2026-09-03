@@ -85,9 +85,77 @@ Every agent operating in this repository must strictly adhere to the following r
 
 ## Phase Boundaries & Current Scope
 
-- **Phase 0 (Current)**: Environment bootstrap, project structure, tooling, and documentation skeleton ONLY.
-- **Phase 1 (Next)**: Core state machines, Drizzle ORM schema, and deterministic policy engine.
-- **Phase 2**: Freshness revalidator (TOCTOU guard) and Razorpay test-mode adapter.
-- **Phase 3**: Replayable evidence ledger, adversarial evaluation harness, and operator UI.
+- **Phase 0 (complete)**: Environment bootstrap, project structure, tooling, documentation skeleton.
+- **Phase 1 (complete)**: The verification kernel. Deterministic pipeline, policy engine,
+  release state machine, capture-time freshness, two-layer idempotency, signed evidence ledger,
+  Razorpay test-mode adapter boundary, HTTP surface, and the baseline-versus-CaptureLock harness.
+- **Phase 2 (complete)**: The real, persistent end-to-end flow. Postgres as the source of
+  truth, a unit of work with explicit transaction boundaries, the grant enforced as a
+  capability at the provider port, separated HTTP authority, request-scoped idempotency,
+  two recovery sweeps, and an end-to-end scenario engine.
+- **Phase 3 (next)**: See "Recommended next phase" in the Phase 2 engineering report.
 
-Agents must not implement future phase deliverables ahead of scheduled alignment.
+### Corrections made in Phase 1 that supersede earlier guidance
+
+Three Phase 0 contracts were found to be unsound and were replaced. An agent
+reading the older documents should treat these as authoritative:
+
+1. **The verification request must not carry intent, policy version, or a
+   timestamp.** The agent supplies identifiers and its own idempotency key;
+   everything authoritative is server-resolved. See
+   `docs/decisions/ADR-004-authorized-intent-and-untrusted-input.md`.
+2. **Freshness compares proposed terms against live terms**, not an
+   agent-supplied row hash against a live one. See
+   `docs/decisions/ADR-008-freshness-proposed-versus-live.md`.
+3. **The merchant is authoritative but adversarial**, not trusted. See
+   `docs/architecture/THREAT_MODEL.md`.
+
+### Corrections made in Phase 2
+
+Two more Phase 1 claims were found to be false and are now fixed. An agent reading
+the older documents should treat these as authoritative:
+
+4. **The capture path was NOT one transaction**, despite ADR-005 saying so. It was
+   several autocommits, and a crash mid-chain stranded the release in a state no
+   sweep could see — permanently bricking the authorization, because the
+   one-active-release index held its slot. See
+   `docs/decisions/ADR-011-unit-of-work-and-stranded-releases.md`.
+5. **Two documented Razorpay behaviours are false on a default account**: duplicate
+   receipts are _accepted_, and the order-by-receipt lookup is _eventually
+   consistent_. The second was a live bug. Measured, not assumed — see
+   `docs/decisions/ADR-015-razorpay-reality.md`.
+
+### Additional non-negotiables established in Phase 2
+
+25. **Multi-write sequences go through `unitOfWork.withTransaction`.** Evidence and
+    the state change it justifies must commit together. A repository reached from
+    outside the callback runs on a different connection and commits independently.
+26. **Never widen a compare-and-set's source-state list to make a transition
+    succeed**, and never add an edge from an indeterminate state back into an
+    in-flight one. That edge is a blind retry.
+27. **An agent must never hold issuer or operator authority.** If a new endpoint can
+    create a mandate, resolve a review, or change recorded state, it needs one of
+    those keys — the kernel enforces whatever mandate it is given and cannot help here.
+28. **Verify provider behaviour against the live API before designing recovery on
+    it.** The documentation was wrong twice. `pnpm smoke:razorpay` exists to be re-run.
+29. **A new non-terminal release state must be classified** as transient (provider
+    provably not called → the liveness sweep may abort it) or indeterminate (provider
+    may have acted → only reconciliation may resolve it). An unclassified state is
+    invisible to both sweeps and will strand releases.
+
+### Additional non-negotiables established in Phase 1
+
+20. **The verification kernel must stay a pure function.** No I/O, no clock, no
+    randomness inside `packages/kernel/src/stages/**`, `kernel.ts` or
+    `combine.ts`. An ESLint rule and an architecture test enforce this. Purity is
+    what makes a decision replayable from evidence; breaking it silently breaks
+    the audit story.
+21. **A verification stage may never approve anything.** Stages emit findings;
+    one combiner decides. Any new stage must be added to `MANDATORY_STAGES`.
+22. **Duplicate prevention belongs in the database.** New money-moving paths
+    must rest on a constraint or a compare-and-set, never on an application-level
+    check that a concurrent transaction could race past.
+23. **A probabilistic component may only restrict a verdict, never raise one.**
+24. **Do not widen a compare-and-set's source-state list to make a transition
+    succeed.** If a transition is being refused, the state machine is telling you
+    something.

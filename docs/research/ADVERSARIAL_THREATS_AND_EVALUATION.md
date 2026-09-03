@@ -13,11 +13,34 @@ Autonomous shopping agents face adversarial interactions from multiple direction
 CaptureLock models agent actions as a trajectory over time:
 
 - **Velocity Counters**: Per-session tracking of catalog queries, merchant transitions, cart mutations, and capture attempts.
-- **Circuit Breakers**: If an agent executes $> 3$ capture retries within 30 seconds or switches merchants $> 2$ times in a single session, CaptureLock trips a trajectory circuit breaker and pauses the session (`TRAJECTORY_RATE_LIMIT_EXCEEDED`).
+- **Circuit Breakers**: Implemented as a per-authorization attempt velocity guard
+  (`RETRY_VELOCITY_EXCEEDED`, default 3 attempts per 60s), which yields **PAUSE**
+  rather than DENY — a retry storm may sit on top of a perfectly legitimate
+  transaction, and a human should decide. Merchant-switch counting was not
+  implemented: the merchant allowlist in the authorized intent already refuses an
+  unapproved merchant outright, which is a stronger control than counting
+  switches.
 
 ---
 
 ## 2. Exactly-Once Payment Execution Mechanics
+
+> [!IMPORTANT]
+> **The sequence diagram below is wrong for Razorpay specifically, and the
+> heading overstates the guarantee.**
+>
+> It shows a retried request returning the cached order. Razorpay's Orders API
+> rejects a duplicate `receipt` rather than returning the existing order, and its
+> capture endpoint is not idempotent at all — a second capture returns HTTP 400.
+> So recovery is a _lookup_, never a retry: `GET /v1/orders?receipt=` and
+> `GET /v1/payments/:id`.
+>
+> What is actually implemented and claimed: **at-most-once money movement**, plus
+> **eventually-consistent knowledge of settlement**. Not exactly-once end to end —
+> after an indeterminate capture, whether money moved is unknown until
+> reconciliation succeeds.
+> See [ADR-005](../decisions/ADR-005-release-state-machine.md) and
+> [ADR-006](../decisions/ADR-006-idempotency-model.md).
 
 In distributed financial architectures, networks are inherently unreliable:
 

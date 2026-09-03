@@ -1,126 +1,153 @@
-# CaptureLock Data Model & Persistence Architecture
+# CaptureLock data model
 
-## 1. Overview
+The authoritative artefact is
+`packages/persistence/src/postgres/migrations/0001_init.sql`. This document
+explains why the schema looks the way it does.
 
-The CaptureLock persistence layer is designed for PostgreSQL using Drizzle ORM. It establishes atomic guarantees for:
+## 1. The constraints are the design
 
-- Exactly-once payment execution.
-- Append-only, tamper-evident audit and evidence storage.
-- Strict session and evaluation traceability.
+The columns are unremarkable. The security-relevant content of this schema is its
+constraints, because application code can be rewritten by anyone and a unique
+index cannot be talked out of its job by a race.
 
----
+| Constraint                                                     | What it prevents                                   |
+| -------------------------------------------------------------- | -------------------------------------------------- |
+| `releases_one_active_per_authorization` (partial unique index) | one authorization funding two concurrent purchases |
+| `releases.client_idempotency_key UNIQUE`                       | two answers for one client request                 |
+| `releases.receipt UNIQUE`                                      | one cart paid for twice                            |
+| `releases.provider_payment_id UNIQUE`                          | two releases claiming one payment                  |
+| `webhook_inbox.provider_event_id PRIMARY KEY`                  | reprocessing a redelivered webhook                 |
+| `evidence_envelopes UNIQUE (chain_id, sequence)`               | the evidence chain forking                         |
+| append-only triggers on `evidence_envelopes`, `evaluations`    | an operator editing the audit trail                |
 
-## 2. Core Entities
+The partial index deserves its full text, since it is the single most important
+line in the schema:
 
-```
-+------------------+         +--------------------+         +--------------------+
-|     sessions     | 1 --- * |   cart_snapshots   | 1 --- 1 |    evaluations     |
-+------------------+         +--------------------+         +--------------------+
-         │                                                            │
-         │ 1                                                          │ 1
-         │                                                            │
-         ▼ *                                                          ▼ 1
-+------------------+                                        +--------------------+
-| evidence_env...  |                                        |      releases      |
-+------------------+                                        +--------------------+
-                                                                      │
-                                                                      │ 1
-                                                                      ▼ *
-                                                            +--------------------+
-                                                            |   webhook_inbox    |
-                                                            +--------------------+
+```sql
+CREATE UNIQUE INDEX releases_one_active_per_authorization
+  ON releases (authorization_id)
+  WHERE state NOT IN ('SETTLED','DENIED','CAPTURE_REJECTED','FAILED','ABORTED');
 ```
 
-### 2.1 `sessions`
+Ten concurrent requests to spend one mandate all issue the insert. Postgres lets
+exactly one through and rejects nine. Proven in `postgres.db.test.ts`.
 
-Represents an authorized agentic commerce interaction initiated by a user.
+## 2. Entities
 
-| Column             | Type         | Constraints             | Description                                                 |
-| ------------------ | ------------ | ----------------------- | ----------------------------------------------------------- |
-| `id`               | UUID         | PRIMARY KEY             | Unique session identifier                                   |
-| `user_id`          | VARCHAR(128) | NOT NULL                | Identifier of the authorizing user                          |
-| `raw_intent`       | TEXT         | NOT NULL                | Original user intent prompt                                 |
-| `max_budget_minor` | BIGINT       | NOT NULL                | Authorized upper limit in minor currency units (e.g. paise) |
-| `currency`         | VARCHAR(3)   | NOT NULL, DEFAULT 'INR' | ISO currency code                                           |
-| `mandate_ref`      | VARCHAR(255) | NULLABLE                | Associated UPI Reserve Pay mandate or AP2 credential ID     |
-| `status`           | VARCHAR(32)  | NOT NULL                | `ACTIVE`, `COMPLETED`, `ABORTED`, `EXPIRED`                 |
-| `created_at`       | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW() | Creation timestamp                                          |
-| `updated_at`       | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW() | Last update timestamp                                       |
+```
+policies ──┐
+           │ (policy_id, version)
+authorizations ──┬── verified_snapshots ──┬── releases ──┬── webhook_inbox
+                 │                        │              └── review_requests
+                 └── evaluations ─────────┘
 
-### 2.2 `cart_snapshots`
+evidence_envelopes  — chained per authorization, independent of the above
+```
 
-Immutable snapshot of a proposed cart submitted by an agent prior to capture.
+### `policies`
 
-| Column               | Type         | Constraints             | Description                                             |
-| -------------------- | ------------ | ----------------------- | ------------------------------------------------------- |
-| `id`                 | UUID         | PRIMARY KEY             | Unique snapshot identifier                              |
-| `session_id`         | UUID         | REFERENCES sessions(id) | Associated session                                      |
-| `merchant_id`        | VARCHAR(128) | NOT NULL                | Target merchant identifier                              |
-| `items_json`         | JSONB        | NOT NULL                | Array of items (SKU, qty, price, row_hash, observed_at) |
-| `total_amount_minor` | BIGINT       | NOT NULL                | Computed total cart price                               |
-| `snapshot_hash`      | VARCHAR(64)  | NOT NULL                | SHA-256 digest of canonical cart items                  |
-| `created_at`         | TIMESTAMPTZ  | NOT NULL                | Submission timestamp                                    |
+Versioned, content-addressed rule documents. `rules` is `JSONB` because a rule
+kind may postdate the binary reading it; each rule is parsed individually at
+evaluation time and an unreadable one denies ([ADR-003](../decisions/ADR-003-policy-representation.md)).
 
-### 2.3 `evaluations`
+### `authorizations`
 
-Verification outcomes produced by the CaptureLock engine.
+The user-granted mandate. Carries `raw_intent_text` (audit only, never read by a
+deterministic check) _and_ `constraints` (structured, machine-evaluable). Both
+`intent_hash` and `policy_hash` are re-verified at every evaluation, so editing
+the stored rows — raising a budget in the database — is detected rather than
+enforced ([ADR-004](../decisions/ADR-004-authorized-intent-and-untrusted-input.md)).
 
-| Column             | Type        | Constraints                   | Description                                  |
-| ------------------ | ----------- | ----------------------------- | -------------------------------------------- |
-| `id`               | UUID        | PRIMARY KEY                   | Unique evaluation record ID                  |
-| `session_id`       | UUID        | REFERENCES sessions(id)       | Associated session                           |
-| `snapshot_id`      | UUID        | REFERENCES cart_snapshots(id) | Evaluated cart snapshot                      |
-| `verdict`          | VARCHAR(16) | NOT NULL                      | `ALLOW`, `PAUSE`, `DENY`                     |
-| `reason_codes`     | JSONB       | NOT NULL                      | Array of triggered reason codes              |
-| `hard_checks_pass` | BOOLEAN     | NOT NULL                      | Result of deterministic predicate evaluation |
-| `spirit_verdict`   | VARCHAR(16) | NULLABLE                      | `ALIGNED`, `MARGINAL`, `DIVERGED`            |
-| `evaluated_at`     | TIMESTAMPTZ | NOT NULL                      | Timestamp of evaluation                      |
+### `verified_snapshots`
 
-### 2.4 `releases`
+A **server-issued** priced quote. The cart, every unit price, the fee quote and
+the total are computed by CaptureLock from a live merchant read. The agent
+proposes SKUs and quantities and receives an opaque id; it never states an amount
+it will be charged. `snapshot_hash` is `UNIQUE`, and `redeemed_by_release_id`
+means a quote can be paid for once
+([ADR-008](../decisions/ADR-008-freshness-proposed-versus-live.md)).
 
-Atomic payment authorization and execution records tracking Razorpay state.
+### `releases`
 
-| Column                | Type         | Constraints                | Description                                   |
-| --------------------- | ------------ | -------------------------- | --------------------------------------------- |
-| `id`                  | UUID         | PRIMARY KEY                | Unique release ID                             |
-| `session_id`          | UUID         | REFERENCES sessions(id)    | Associated session                            |
-| `evaluation_id`       | UUID         | REFERENCES evaluations(id) | Authorizing evaluation record                 |
-| `idempotency_key`     | VARCHAR(128) | NOT NULL, UNIQUE           | Composite business idempotency key            |
-| `razorpay_order_id`   | VARCHAR(64)  | NULLABLE, UNIQUE           | Razorpay test mode Order ID (`order_...`)     |
-| `razorpay_payment_id` | VARCHAR(64)  | NULLABLE, UNIQUE           | Razorpay test mode Payment ID (`pay_...`)     |
-| `status`              | VARCHAR(32)  | NOT NULL                   | `PENDING`, `AUTHORIZED`, `CAPTURED`, `FAILED` |
-| `created_at`          | TIMESTAMPTZ  | NOT NULL                   | Creation timestamp                            |
+One attempt to move money, and the state machine's home. Both idempotency layers
+live here: the agent-chosen `client_idempotency_key` with its
+`request_fingerprint`, and the server-derived `receipt`. `in_flight_since` is set
+before a provider call and cleared after — a non-null value on a stuck row is how
+the reconciliation sweep finds work.
 
-### 2.5 `webhook_inbox`
+### `evaluations`
 
-Guarantees deduplication of asynchronous Razorpay webhook events.
+One immutable row per kernel decision, with `context_hash` and `decision_hash`.
+Append-only by trigger.
 
-| Column         | Type         | Constraints      | Description                                |
-| -------------- | ------------ | ---------------- | ------------------------------------------ |
-| `id`           | UUID         | PRIMARY KEY      | Internal inbox ID                          |
-| `event_id`     | VARCHAR(128) | NOT NULL, UNIQUE | Upstream Razorpay event ID                 |
-| `event_type`   | VARCHAR(64)  | NOT NULL         | E.g. `payment.captured`, `payment.failed`  |
-| `payload_hash` | VARCHAR(64)  | NOT NULL         | SHA-256 digest of raw webhook body         |
-| `processed_at` | TIMESTAMPTZ  | NOT NULL         | Processing timestamp                       |
-| `status`       | VARCHAR(32)  | NOT NULL         | `PROCESSED`, `IGNORED_DUPLICATE`, `FAILED` |
+### `webhook_inbox`
 
-### 2.6 `evidence_envelopes`
+The provider's event id **is** the primary key, so deduplication is a constraint
+violation rather than a prior `SELECT` that could race. Unverified events are
+never stored, so a forged event cannot occupy an id a genuine delivery may need.
 
-Append-only cryptographically chained ledger of all verification events.
+### `evidence_envelopes`
 
-| Column               | Type        | Constraints             | Description                                                 |
-| -------------------- | ----------- | ----------------------- | ----------------------------------------------------------- |
-| `id`                 | UUID        | PRIMARY KEY             | Unique envelope identifier                                  |
-| `session_id`         | UUID        | REFERENCES sessions(id) | Associated session                                          |
-| `sequence_number`    | BIGINT      | NOT NULL                | Monotonically increasing sequence number                    |
-| `prev_envelope_hash` | VARCHAR(64) | NOT NULL                | Hash of previous envelope in chain                          |
-| `envelope_hash`      | VARCHAR(64) | NOT NULL                | SHA-256 hash of this envelope's canonical payload           |
-| `payload`            | JSONB       | NOT NULL                | Full envelope structure (intent, cart, live state, verdict) |
-| `created_at`         | TIMESTAMPTZ | NOT NULL                | Commit timestamp                                            |
+One chain per authorization: a natural audit unit, so a reviewer can verify one
+purchase without reading the whole ledger. Appends take a per-chain advisory lock
+inside the transaction; `UNIQUE (chain_id, sequence)` is the backstop
+([ADR-007](../decisions/ADR-007-evidence-model.md)).
 
----
+### `idempotency_records`
 
-## 3. Open Design Decisions
+Request-scoped idempotency, added in Phase 2 and distinct from the
+release-scoped key on `releases`. The provider's own key is the primary key, so
+two concurrent requests race on the constraint rather than on a prior `SELECT`.
+The `IN_FLIGHT` row commits _before_ the work begins, which is what lets a
+crash mid-request be told apart from a first attempt
+([ADR-013](../decisions/ADR-013-request-scoped-idempotency.md)).
 
-- **Partitioning Strategy for `evidence_envelopes`**: STATUS: OPEN DECISION (Whether to partition by `created_at` monthly or maintain a unified table during prototype phase).
-- **JSON Serialization Canonicalization**: STATUS: OPEN DECISION (Selection of canonical JSON serialization standard for computing `snapshot_hash` and `envelope_hash`, e.g. RFC 8785 JSON Canonicalization Scheme vs. sorted keys).
+### `review_requests`
+
+A paused release awaiting a human. `snapshot_hash` binds the review to one exact
+cart — re-quoting produces a different hash and needs a new review, so an
+approval cannot be reused for a cart the reviewer never saw. A partial unique
+index allows one open review per release.
+
+## 3. Money in the database
+
+`BIGINT` minor units plus a `CHAR(3)` currency. No `NUMERIC`, no `FLOAT`.
+
+`pg` returns `BIGINT` as a string, and the mapping layer parses it and asserts
+`Number.isSafeInteger` rather than coercing — a value large enough to lose
+precision throws instead of quietly rounding. Verified by a round-trip test at
+₹99,999,999,999.99.
+
+## 4. What is deliberately absent
+
+- **No secrets.** The evidence signing key lives in the environment; Razorpay
+  credentials are never persisted.
+- **No agent-supplied prices.** There is no column for one.
+- **No mutable audit rows.** Enforced by trigger, not convention.
+- **No partitioning.** Phase 0 listed this as open. A prototype's evidence table
+  does not need it, and partitioning an append-only table is a routine later
+  change.
+
+## 5. Migrations
+
+Hand-written SQL rather than generated. The security-relevant parts — a `WHERE`
+clause on a unique index, a `plpgsql` trigger — are exactly the things a
+generator does not express, and they should be visible and reviewable in one
+file ([ADR-010](../decisions/ADR-010-test-topology-and-persistence.md)).
+
+Applied by a small runner: numbered files, in order, each inside its own
+transaction that also records the row in `schema_migrations`. A failure part-way
+leaves neither a half-applied schema nor a false record of success.
+
+```bash
+pnpm db:up        # start Postgres
+pnpm db:migrate   # apply pending migrations
+pnpm db:reset     # drop everything and reapply (refused in production)
+```
+
+## 6. Indexes added in Phase 2
+
+`releases_transient_idx` supports the liveness sweep. It is filtered on
+`updated_at` rather than `in_flight_since`, because a release stranded in a
+transient state never made a provider call and so never set the latter
+([ADR-011](../decisions/ADR-011-unit-of-work-and-stranded-releases.md)).

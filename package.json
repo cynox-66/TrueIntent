@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "pnpm --filter @capturelock/api dev",
     "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
     "clean": "rm -rf packages/*/dist apps/*/dist packages/*/*.tsbuildinfo apps/*/*.tsbuildinfo",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -22,7 +22,14 @@
     "format:check": "prettier --check \"**/*.{ts,js,json,md,yml,yaml}\"",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
-    "db:logs": "docker compose logs -f postgres"
+    "db:logs": "docker compose logs -f postgres",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "test:all": "pnpm test && pnpm test:db",
+    "eval": "pnpm --filter @capturelock/eval eval",
+    "db:migrate": "tsx scripts/migrate.mts",
+    "db:reset": "tsx scripts/migrate.mts --reset",
+    "smoke:razorpay": "tsx scripts/smoke-razorpay.mts",
+    "scenario": "pnpm --filter @capturelock/eval scenario"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
@@ -32,6 +39,11 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.0",
-    "vitest": "^3.0.5"
+    "vitest": "^3.0.5",
+    "@types/node": "^22.13.4",
+    "@capturelock/persistence": "workspace:*",
+    "@capturelock/integrations": "workspace:*",
+    "@capturelock/core": "workspace:*",
+    "dotenv": "^16.4.7"
   }
 }

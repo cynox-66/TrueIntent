@@ -1,6 +1,6 @@
 # ADR-001: Initial Architecture & Phase 0 Environment Foundation
 
-- **Status**: Accepted
+- **Status**: Accepted; several sections superseded by ADR-002..010 (see §6)
 - **Date**: 2026-09-03
 - **Author**: CaptureLock Engineering Team
 - **Target Milestone**: Razorpay AI Buildathon 2026 (Track 1)
@@ -101,3 +101,27 @@ The following decisions are deliberately deferred to subsequent phases:
 
 - Setting up a strict monorepo requires initial boilerplate and explicit project references in `tsconfig.json`.
 - Strict typing and Zod schemas require upfront schema definitions before writing logic.
+
+---
+
+## 6. Superseded and resolved (added 2026-09-03, Phase 1)
+
+The architecture direction in §2 stands. The following changed once the
+implementation forced the questions:
+
+| §4 open question                 | Resolution                                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Evidence cryptographic primitive | Ed25519 signature over a SHA-256 chain — [ADR-007](ADR-007-evidence-model.md)                                                                     |
+| Spirit-check fallback semantics  | The question dissolved: the advisory layer can only restrict, so it has no fail-open mode — [ADR-009](ADR-009-advisory-layer-restriction-only.md) |
+| Merchant live-state ingestion    | A port with a deterministic fake; the security check is proposed-versus-live — [ADR-008](ADR-008-freshness-proposed-versus-live.md)               |
+| Idempotency key scope            | Two layers; the guarantee is a database constraint — [ADR-006](ADR-006-idempotency-model.md)                                                      |
+
+One technology choice changed. §2 named **Drizzle ORM**; the repositories use
+`pg` with explicit SQL instead. The compare-and-set statements _are_ the security
+guarantee and should be readable as SQL by anyone auditing this system; a query
+builder adds indirection between the reviewer and the statement without adding
+safety. Reasoning in [ADR-010](ADR-010-test-topology-and-persistence.md).
+
+§3's "the LLM proposes, deterministic code decides" held up exactly, and is now
+enforced by types rather than by convention — see the `ExecutionGrant` brand in
+`packages/kernel/src/grant.ts`.
