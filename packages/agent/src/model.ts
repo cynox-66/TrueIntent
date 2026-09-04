@@ -20,7 +20,7 @@
  * which is the entire point of having the interface.
  */
 
-import type { CatalogProductView, Money, SessionBounds } from '@capturelock/core';
+import type { CatalogProductView, Money, SessionBounds, Sku } from '@capturelock/core';
 import { money } from '@capturelock/core';
 import type { AgentAction } from './tools.js';
 
@@ -83,6 +83,19 @@ export interface BuyerModel {
 export class DeterministicBuyerModel implements BuyerModel {
   public readonly name: string;
 
+  /** Preferred SKUs already looked up, so a missing one is not chased forever. */
+  private readonly lookedUp = new Set<string>();
+
+  /**
+   * SKUs this planner has asked to add.
+   *
+   * On the next turn, a proposed SKU that is not in the cart was refused — the
+   * server validated it and said no. Retrying it would produce the same answer
+   * until the step budget ran out, which is a worse account of what happened
+   * than "the agent tried, was told no, and bought something else".
+   */
+  private readonly proposedAdds = new Set<string>();
+
   constructor(
     private readonly options: {
       /** SKUs to reach for first, in order. Used by drift scenarios. */
@@ -120,15 +133,33 @@ export class DeterministicBuyerModel implements BuyerModel {
     const maxLines = this.options.maxLines ?? 3;
     const inCart = new Set(input.cart.map(line => line.sku));
 
-    // 2. Add the preferred SKUs first, if a scenario named any. The branded
-    //    SKU comes from the observed product rather than from the option, so
-    //    the model can only ever propose something the catalogue actually
-    //    returned — even when a scenario is steering it somewhere silly.
+    // 2. Add the preferred SKUs first, if a scenario named any.
+    //
+    //    A preferred SKU that the search did not surface is looked up rather
+    //    than skipped: "I know what I want, let me check the catalogue for it"
+    //    is what an agent with a fixed idea does, and skipping it would mean a
+    //    scenario steering the agent at an out-of-scope item quietly never
+    //    reached the check that refuses it.
     for (const preferred of this.options.preferSku ?? []) {
       if (inCart.has(preferred)) continue;
+      // Proposed before and still not in the cart: it was refused.
+      if (this.proposedAdds.has(preferred)) continue;
+
       const product = input.observed.find(candidate => candidate.sku === preferred);
-      if (product === undefined) continue;
-      return { action: 'ADD_ITEM', sku: product.sku, quantity };
+      if (product !== undefined) {
+        this.proposedAdds.add(product.sku);
+        return { action: 'ADD_ITEM', sku: product.sku, quantity };
+      }
+      // Not seen yet: look it up once. `lookedUp` stops a SKU the catalogue
+      // genuinely does not carry from being chased until the step budget runs
+      // out — the agent asks, learns it does not exist, and moves on.
+      if (!this.lookedUp.has(preferred)) {
+        this.lookedUp.add(preferred);
+        // Cast rather than validated here on purpose: the runtime runs every
+        // action through `parseAgentAction`, so a malformed SKU is refused
+        // there. Validating in two places invites the two to disagree.
+        return { action: 'GET_PRODUCT', sku: preferred as Sku };
+      }
     }
 
     // 3. Otherwise fill the cart with affordable, in-scope, in-stock items,
@@ -137,6 +168,7 @@ export class DeterministicBuyerModel implements BuyerModel {
     if (inCart.size < maxLines) {
       const candidate = this.pickCandidate(input, inCart, quantity);
       if (candidate !== null) {
+        this.proposedAdds.add(candidate.sku);
         return { action: 'ADD_ITEM', sku: candidate.sku, quantity };
       }
     }
@@ -169,6 +201,7 @@ export class DeterministicBuyerModel implements BuyerModel {
     // filter being bypassable via `preferSku`.
     const eligible = input.observed
       .filter(product => !inCart.has(product.sku))
+      .filter(product => !this.proposedAdds.has(product.sku))
       .filter(product => product.available && product.availableStock >= quantity)
       .filter(product => !forbidden.has(product.category))
       .filter(product => allowed.size === 0 || allowed.has(product.category))
