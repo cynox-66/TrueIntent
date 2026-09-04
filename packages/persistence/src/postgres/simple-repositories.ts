@@ -300,6 +300,23 @@ export class PostgresReviewRepository implements ReviewRepository {
     return rows.length === 0 ? null : toReview(rows[0]!);
   }
 
+  /**
+   * Open reviews only, oldest first.
+   *
+   * `created_at` is NOT NULL with a default, so no null ordering case exists;
+   * `review_id` is the primary key and makes the sort total.
+   */
+  async listOpen(limit: number): Promise<readonly ReviewRecord[]> {
+    const rows = await this.db.query<ReviewRow>(
+      `${REVIEW_SELECT}
+       WHERE state = 'OPEN'
+       ORDER BY created_at ASC, review_id ASC
+       LIMIT $1`,
+      [limit],
+    );
+    return rows.map(toReview);
+  }
+
   /** CAS from OPEN. Two reviewers clicking at once cannot both resolve. */
   async resolve(
     id: ReviewId,

@@ -101,8 +101,8 @@ pnpm dev                        # API on :3000, Postgres, fake provider
 pnpm scenario       # 7 end-to-end lifecycle scenarios
 pnpm eval           # baseline vs CaptureLock → reports/
 
-pnpm test           # 430 tests, offline, no Docker
-pnpm test:db        # 23 tests against real Postgres
+pnpm test           # 483 tests, offline, no Docker
+pnpm test:db        # 38 tests against real Postgres
 pnpm smoke:razorpay         # opt-in: live order semantics
 pnpm smoke:razorpay:capture # opt-in: live capture semantics (one browser step)
 
@@ -164,9 +164,17 @@ Or just run `pnpm scenario 2-price-drift`.
 | `GET /v1/releases/:id`               | release state and its evaluation history                |
 | `POST /v1/reviews/:id/resolve`       | operator resolves a PAUSE; approval re-verifies         |
 | `POST /v1/webhooks/razorpay`         | HMAC over raw bytes, deduplicated by event id           |
+| `GET /v1/operator/queue`             | **operator only** — every release awaiting a human      |
 | `GET /v1/evidence/:id`               | envelope plus a live replay check                       |
+| `GET /v1/evidence/chain/:id`         | an authorization's evidence timeline, in sequence       |
 | `GET /v1/evidence/chain/:id/verify`  | verify an authorization's chain                         |
 | `GET /v1/evidence/public-key`        | the Ed25519 key an auditor needs                        |
+
+Three separated authorities, all header-borne and never body-supplied: a
+principal (`x-capturelock-user` + `x-capturelock-session`) acts, an issuer
+(`x-capturelock-issuer-key`) creates mandates, and an operator
+(`x-capturelock-operator-key` + `x-capturelock-operator`) resolves reviews,
+forces reconciliation and reads the queue. An agent holds only the first.
 
 No endpoint moves money without passing the kernel. There is no override flag.
 `POST /v1/dev/*` exists only when the provider is the fake and the environment is

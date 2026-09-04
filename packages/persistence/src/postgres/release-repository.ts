@@ -30,7 +30,11 @@ import {
   type SnapshotId,
   type Timestamp,
 } from '@capturelock/core';
-import { TRANSIENT_RELEASE_STATES, timestampFromDate } from '@capturelock/core';
+import {
+  OPERATOR_ATTENTION_RELEASE_STATES,
+  TRANSIENT_RELEASE_STATES,
+  timestampFromDate,
+} from '@capturelock/core';
 import { isUniqueViolation, type Queryable } from './client.js';
 
 interface ReleaseRow extends Record<string, unknown> {
@@ -257,6 +261,29 @@ export class PostgresReleaseRepository implements ReleaseRepository {
        ORDER BY in_flight_since ASC
        LIMIT $2`,
       [olderThan, limit],
+    );
+    return rows.map(toRecord);
+  }
+
+  /**
+   * The operator queue's backing query.
+   *
+   * The state list is bound as a parameter rather than interpolated, so it
+   * stays derived from the domain constant instead of being a second copy of it
+   * that can drift. No age threshold: unlike the sweeper queries this answers
+   * "what needs a human right now", and a release that just paused needs one.
+   *
+   * `updated_at` is NOT NULL with a default, so the ordering has no null case;
+   * `release_id` is the primary key, which makes the sort total and the result
+   * stable across identical timestamps.
+   */
+  async listRequiringOperatorAttention(limit: number): Promise<readonly ReleaseRecord[]> {
+    const rows = await this.db.query<ReleaseRow>(
+      `${SELECT}
+       WHERE state = ANY($1)
+       ORDER BY updated_at ASC, release_id ASC
+       LIMIT $2`,
+      [[...OPERATOR_ATTENTION_RELEASE_STATES], limit],
     );
     return rows.map(toRecord);
   }

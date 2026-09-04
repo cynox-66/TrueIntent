@@ -110,6 +110,20 @@ export interface ReleaseRepository {
     olderThan: Timestamp,
     limit: number,
   ): Promise<readonly ReleaseRecord[]>;
+  /**
+   * Releases waiting on a human, for the operator queue.
+   *
+   * Distinct from `findRequiringReconciliation` on purpose. That query is the
+   * reconciliation sweeper's: time-based, and it excludes `PAUSED` because a
+   * paused release is not stuck. This one answers the operator's question —
+   * "what needs me?" — which is `PAUSED` plus every state where the provider's
+   * truth is still unknown, with no age threshold, because an operator looking
+   * at the queue wants to see a release the moment it arrives.
+   *
+   * Ordered oldest-first by `updatedAt`, with `releaseId` breaking ties so the
+   * order is total and a page boundary cannot drop or repeat a row.
+   */
+  listRequiringOperatorAttention(limit: number): Promise<readonly ReleaseRecord[]>;
 }
 
 export interface EvaluationRecord {
@@ -195,6 +209,15 @@ export interface ReviewRepository {
   insert(record: ReviewRecord): Promise<void>;
   findById(id: ReviewId): Promise<ReviewRecord | null>;
   findOpenByRelease(id: ReleaseId): Promise<ReviewRecord | null>;
+  /**
+   * Every unresolved review, oldest first.
+   *
+   * Only `OPEN`. A resolved review is history, not work, and the operator queue
+   * must not invite anyone to decide something already decided — `resolve` is a
+   * CAS from `OPEN`, so a second resolution would fail anyway, but showing it
+   * would be a lie about the state of the world.
+   */
+  listOpen(limit: number): Promise<readonly ReviewRecord[]>;
   /** CAS from OPEN to a resolution. Returns null if already resolved. */
   resolve(
     id: ReviewId,

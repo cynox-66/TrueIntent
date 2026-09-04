@@ -87,6 +87,29 @@ export function requiresReconciliation(state: ReleaseState): boolean {
 }
 
 /**
+ * States in which a release is waiting on a human.
+ *
+ * Derived from the two existing sets rather than restated, so it cannot drift
+ * from them: `PAUSED` means the kernel asked for a decision, and the
+ * indeterminate states mean the provider's truth is unknown and reconciliation
+ * has not settled it. Both need an operator; nothing else does.
+ *
+ * Deliberately NOT the same question as `findRequiringReconciliation` asks. That
+ * is a time-based sweeper query — "stuck long enough to chase automatically" —
+ * and it excludes `PAUSED` entirely, because a paused release is not stuck, it
+ * is waiting correctly. An operator queue that reused it would show reconciler
+ * backlog and hide every review.
+ */
+export const OPERATOR_ATTENTION_RELEASE_STATES = [
+  'PAUSED',
+  ...INDETERMINATE_RELEASE_STATES,
+] as const satisfies readonly ReleaseState[];
+
+export function requiresOperatorAttention(state: ReleaseState): boolean {
+  return (OPERATOR_ATTENTION_RELEASE_STATES as readonly ReleaseState[]).includes(state);
+}
+
+/**
  * States a crash can strand, from which the provider was provably never called.
  *
  * Each is entered before a write-ahead commit and left by one, so a release

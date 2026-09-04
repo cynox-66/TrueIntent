@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createHmac } from 'node:crypto';
+import { asTimestamp } from '@capturelock/core';
 import type { FastifyInstance } from 'fastify';
 import { buildApplication } from '../src/composition.js';
 import { loadConfig } from '../src/config.js';
@@ -562,3 +563,262 @@ describe('configuration guards', () => {
     ).toThrow();
   });
 });
+
+describe('the operator queue is behind operator authority', () => {
+  it('refuses an anonymous caller', async () => {
+    const response = await server.inject({ method: 'GET', url: '/v1/operator/queue' });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('refuses an agent holding only a principal', async () => {
+    // The queue is not a money endpoint, but it enumerates every release
+    // awaiting a human. That is a map of exactly where the system is currently
+    // undecided, which is not something the party being checked should hold.
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/operator/queue',
+      headers: PRINCIPAL,
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('refuses an agent holding the issuer key', async () => {
+    // Separated authorities: being able to mint an authorization does not make
+    // you an operator.
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/operator/queue',
+      headers: ISSUER,
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('refuses a wrong operator key', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/operator/queue',
+      headers: { 'x-capturelock-operator-key': 'not-the-operator-key' },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('cannot be unlocked by naming an operator in the query string', async () => {
+    // Authority is the key, not the name. If a name were enough, anyone could
+    // type one.
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/operator/queue?operator=operator_dev&operatorKey=dev-operator-key-not-for-prod',
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('serves the queue to a genuine operator', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/v1/operator/queue',
+      headers: OPERATOR,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({ items: [], count: 0 });
+  });
+});
+
+describe('the operator queue shows what is waiting, and only that', () => {
+  it('omits a release that completed without needing anybody', async () => {
+    const authorizationId = await createAuthorization();
+    const snapshotId = await createQuote(authorizationId);
+    const release = await server.inject({
+      method: 'POST',
+      url: '/v1/releases',
+      headers: PRINCIPAL,
+      payload: { authorizationId, snapshotId, idempotencyKey: `idem-${Date.now()}` },
+    });
+    expect(JSON.parse(release.body).verdict).toBe('ALLOW');
+
+    const queue = await server.inject({
+      method: 'GET',
+      url: '/v1/operator/queue',
+      headers: OPERATOR,
+    });
+    // ORDER_CREATED is progress, not a question for a human.
+    expect(JSON.parse(queue.body).items).toEqual([]);
+  });
+
+  it('lists a paused release with its open review and says what it waits on', async () => {
+    const authorizationId = await createAuthorization();
+    const snapshotId = await createQuote(authorizationId);
+    await server.inject({
+      method: 'POST',
+      url: '/v1/releases',
+      headers: PRINCIPAL,
+      payload: { authorizationId, snapshotId, idempotencyKey: `idem-${Date.now()}` },
+    });
+
+    // Drive the release to PAUSED through the domain rather than by writing a
+    // state: a queue that only works on hand-written rows proves nothing.
+    const paused = await pauseSomeRelease();
+
+    const queue = await server.inject({
+      method: 'GET',
+      url: '/v1/operator/queue',
+      headers: OPERATOR,
+    });
+    const body = JSON.parse(queue.body) as {
+      items: { releaseId: string; state: string; waitingOn: string; review: unknown }[];
+    };
+    const item = body.items.find(i => i.releaseId === paused);
+    expect(item).toBeDefined();
+    expect(item!.state).toBe('PAUSED');
+    // The two kinds of waiting are not interchangeable: this one is resolved by
+    // a decision, not by asking the provider what happened.
+    expect(item!.waitingOn).toBe('REVIEW');
+    expect(item!.review).toMatchObject({ state: 'OPEN' });
+  });
+});
+
+describe('the evidence timeline', () => {
+  it('returns envelopes in sequence order', async () => {
+    const authorizationId = await createAuthorization();
+    const snapshotId = await createQuote(authorizationId);
+    await server.inject({
+      method: 'POST',
+      url: '/v1/releases',
+      headers: PRINCIPAL,
+      payload: { authorizationId, snapshotId, idempotencyKey: `idem-${Date.now()}` },
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/v1/evidence/chain/${authorizationId}`,
+    });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as {
+      chainId: string;
+      head: { sequence: number } | null;
+      envelopes: { sequence: number; kind: string; chainHash: string; prevChainHash: string }[];
+    };
+    expect(body.chainId).toBe(authorizationId);
+    expect(body.envelopes.length).toBeGreaterThan(0);
+    expect(body.envelopes.map(e => e.sequence)).toEqual(
+      [...body.envelopes.map(e => e.sequence)].sort((a, b) => a - b),
+    );
+    // Each envelope names its predecessor: that linkage is what the console
+    // renders as a chain rather than a list.
+    for (let i = 1; i < body.envelopes.length; i += 1) {
+      expect(body.envelopes[i]!.prevChainHash).toBe(body.envelopes[i - 1]!.chainHash);
+    }
+    expect(body.head?.sequence).toBe(body.envelopes.at(-1)!.sequence);
+  });
+
+  it('agrees with the verify endpoint about the head', async () => {
+    // Two endpoints, one ledger. If they ever disagree, one of them is lying.
+    const authorizationId = await createAuthorization();
+    const snapshotId = await createQuote(authorizationId);
+    await server.inject({
+      method: 'POST',
+      url: '/v1/releases',
+      headers: PRINCIPAL,
+      payload: { authorizationId, snapshotId, idempotencyKey: `idem-${Date.now()}` },
+    });
+
+    const timeline = JSON.parse(
+      (await server.inject({ method: 'GET', url: `/v1/evidence/chain/${authorizationId}` })).body,
+    ) as { envelopes: { chainHash: string }[] };
+    const verified = JSON.parse(
+      (await server.inject({ method: 'GET', url: `/v1/evidence/chain/${authorizationId}/verify` }))
+        .body,
+    ) as { valid: boolean; verifiedCount: number; headChainHash: string };
+
+    expect(verified.valid).toBe(true);
+    expect(verified.verifiedCount).toBe(timeline.envelopes.length);
+    expect(verified.headChainHash).toBe(timeline.envelopes.at(-1)!.chainHash);
+  });
+
+  it('reports an unknown chain as empty rather than as an error', async () => {
+    // "This authorization has produced no evidence" is a true answer, and the
+    // same one the verify route already gives for an unknown chain.
+    const response = await server.inject({
+      method: 'GET',
+      url: `/v1/evidence/chain/auth_${'a'.repeat(32)}`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({ envelopes: [], head: null });
+  });
+
+  it('does not carry provider credentials into the timeline', async () => {
+    const authorizationId = await createAuthorization();
+    const snapshotId = await createQuote(authorizationId);
+    await server.inject({
+      method: 'POST',
+      url: '/v1/releases',
+      headers: PRINCIPAL,
+      payload: { authorizationId, snapshotId, idempotencyKey: `idem-${Date.now()}` },
+    });
+
+    const body = (
+      await server.inject({
+        method: 'GET',
+        url: `/v1/evidence/chain/${authorizationId}`,
+      })
+    ).body;
+    // The evidence chain is operator-readable by design; what must never be in
+    // it is anything that would let a reader act as us, or as the payer.
+    for (const forbidden of ['keySecret', 'key_secret', 'webhookSecret', 'rzp_test_', 'cvv']) {
+      expect(body).not.toContain(forbidden);
+    }
+  });
+});
+
+/**
+ * Drives a release to PAUSED through the real gate.
+ *
+ * The demo policy carries only DENY rules, so a PAUSE is not reachable with it.
+ * Rather than writing a paused row directly — which would let the queue test
+ * pass against a state the domain never produces — this registers a policy whose
+ * spend ceiling is a PAUSE, and lets gate 1 reach that verdict on its own. The
+ * review record the queue then displays is the one `ReleaseService` created.
+ */
+async function pauseSomeRelease(): Promise<string> {
+  await app.deps.policies.insert({
+    policyId: 'pause_on_spend',
+    version: '1.0.0',
+    name: 'Pauses above a low ceiling',
+    createdAt: asTimestamp('2026-09-01T00:00:00.000Z'),
+    rules: [
+      {
+        ruleId: 'pause_total',
+        kind: 'MAX_TOTAL',
+        description: 'Anything above 1 rupee needs a human',
+        severity: 'PAUSE',
+        max: { currency: 'INR', amountMinor: 100 },
+      },
+    ],
+  });
+
+  const authorization = await server.inject({
+    method: 'POST',
+    url: '/v1/authorizations',
+    headers: ISSUER,
+    payload: {
+      rawIntent: 'Find me the cheapest pair of black running shoes under 5,000 rupees.',
+      policyId: 'pause_on_spend',
+      policyVersion: '1.0.0',
+      constraints: futureConstraints(),
+      normalization: { method: 'MANUAL', modelId: null, confirmedByUser: true },
+    },
+  });
+  expect(authorization.statusCode).toBe(201);
+  const authorizationId = (JSON.parse(authorization.body) as { authorizationId: string })
+    .authorizationId;
+
+  const snapshotId = await createQuote(authorizationId);
+  const release = await server.inject({
+    method: 'POST',
+    url: '/v1/releases',
+    headers: PRINCIPAL,
+    payload: { authorizationId, snapshotId, idempotencyKey: `idem-pause-${Date.now()}` },
+  });
+  const body = JSON.parse(release.body) as { verdict: string; releaseId: string };
+  expect(body.verdict).toBe('PAUSE');
+  return body.releaseId;
+}

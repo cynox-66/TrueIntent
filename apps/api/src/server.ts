@@ -40,6 +40,16 @@ import {
   ReviewIdParam,
 } from './routes/schemas.js';
 
+/**
+ * Upper bound on one queue page.
+ *
+ * Not pagination — deliberately. A queue this long means the operators are
+ * already underwater, and the honest fix is fewer paused releases, not a second
+ * page. The cap exists so one enormous backlog cannot turn a console refresh
+ * into an unbounded query; `count` tells the caller how many came back.
+ */
+const OPERATOR_QUEUE_LIMIT = 200;
+
 export interface ServerOptions {
   readonly logger?: boolean;
   readonly app: Application;
@@ -179,7 +189,9 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       'GET  /v1/releases/:id',
       'POST /v1/reviews/:id/resolve',
       'POST /v1/webhooks/razorpay',
+      'GET  /v1/operator/queue',
       'GET  /v1/evidence/:id',
+      'GET  /v1/evidence/chain/:id',
       'GET  /v1/evidence/chain/:id/verify',
       'GET  /v1/evidence/public-key',
     ],
@@ -411,6 +423,67 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     });
   });
 
+  // -------------------------------------------------------------- operator --
+  /**
+   * What needs a human, and why.
+   *
+   * An index, not a detail view: every row carries only enough to triage and to
+   * navigate, and the caller follows `releaseId` / `authorizationId` to the
+   * existing detail and evidence endpoints for anything more. Copying whole
+   * release, authorization or evidence records in here would give the console a
+   * second source of truth that ages badly.
+   *
+   * Operator authority, for the same reason `reconcile` and `resolve` require
+   * it. Those are protected because they act; this is protected because it
+   * enumerates. A lookup by opaque release id reveals one release to someone
+   * who already had its id — a queue hands over the whole live worklist,
+   * including what is paused and why, which is exactly the map an attacker
+   * would want. Reads by id keep their existing semantics; see ADR-017.
+   */
+  server.get('/v1/operator/queue', async (request, reply) => {
+    if (!hasAuthority(request, 'x-capturelock-operator-key', app.config.operatorApiKey)) {
+      return forbidden(reply, 'Operator', 'the queue enumerates every release awaiting a human');
+    }
+
+    const releases = await app.deps.releases.listRequiringOperatorAttention(OPERATOR_QUEUE_LIMIT);
+    // Reviews are fetched per release rather than listed and joined in memory:
+    // `findOpenByRelease` is the existing accessor, it already encodes "open",
+    // and the queue is bounded by OPERATOR_QUEUE_LIMIT.
+    const items = await Promise.all(
+      releases.map(async release => {
+        const review = await app.deps.reviews.findOpenByRelease(release.releaseId);
+        return {
+          releaseId: release.releaseId,
+          authorizationId: release.authorizationId,
+          state: release.state,
+          // Which of the two kinds of waiting this is. An operator resolves the
+          // first and reconciles the second; conflating them would put the
+          // wrong action in front of them.
+          waitingOn: release.state === 'PAUSED' ? ('REVIEW' as const) : ('RECONCILIATION' as const),
+          amount: release.amount,
+          reasonCodes: release.lastReasonCodes,
+          attemptCount: release.attemptCount,
+          providerOrderId: release.providerOrderId,
+          providerPaymentId: release.providerPaymentId,
+          inFlightSince: release.inFlightSince,
+          createdAt: release.createdAt,
+          updatedAt: release.updatedAt,
+          review:
+            review === null
+              ? null
+              : {
+                  reviewId: review.reviewId,
+                  state: review.state,
+                  reasonCodes: review.reasonCodes,
+                  createdAt: review.createdAt,
+                },
+        };
+      }),
+    );
+
+    return reply.send({ items, count: items.length, limit: OPERATOR_QUEUE_LIMIT });
+  });
+
   // --------------------------------------------------------------- reviews --
   server.post('/v1/reviews/:id/resolve', async (request, reply) => {
     // A PAUSE exists so a human looks. An agent able to resolve its own paused
@@ -505,6 +578,31 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const { id } = AuthorizationIdParam.parse(request.params);
     const result = await app.deps.evidence.verifyChain(id);
     return reply.send(result);
+  });
+
+  /**
+   * The evidence timeline for one chain.
+   *
+   * A straight serialization of `listByChain`, which the ledger already orders
+   * by sequence and which `verifyChain` already consumes. Deliberately not a
+   * second evidence representation shaped for a UI: the envelope IS the record,
+   * and a console that renders something else would be rendering a claim about
+   * the evidence rather than the evidence.
+   *
+   * Replay and verification are not repeated here. `GET /v1/evidence/:id`
+   * replays one envelope and `GET /v1/evidence/chain/:id/verify` verifies the
+   * chain; both remain the only implementations. This endpoint returns the head
+   * hash so a caller can correlate the two without recomputing anything.
+   *
+   * An empty chain is an empty list, not a 404. Chain ids are authorization
+   * ids, and "this authorization has produced no evidence yet" is a true and
+   * useful answer — the same one the verify route already gives.
+   */
+  server.get('/v1/evidence/chain/:id', async (request, reply) => {
+    const { id } = AuthorizationIdParam.parse(request.params);
+    const envelopes = await app.deps.evidence.listByChain(id);
+    const head = await app.deps.evidence.head(id);
+    return reply.send({ chainId: id, head, envelopes });
   });
 
   server.get('/v1/evidence/:id', async (request, reply) => {

@@ -54,6 +54,7 @@ import type {
 import {
   isTerminalReleaseState,
   isTransientReleaseState,
+  requiresOperatorAttention,
   timestampToEpochMillis,
 } from '@capturelock/core';
 
@@ -249,6 +250,20 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
     return out;
   }
 
+  async listRequiringOperatorAttention(limit: number): Promise<readonly ReleaseRecord[]> {
+    // Sorted before slicing, not while iterating: taking the first `limit`
+    // rows in insertion order and then sorting them would return a different
+    // set than the Postgres query, which orders the whole table first.
+    return [...this.rows.values()]
+      .filter(row => requiresOperatorAttention(row.state))
+      .sort(
+        (a, b) =>
+          timestampToEpochMillis(a.updatedAt) - timestampToEpochMillis(b.updatedAt) ||
+          a.releaseId.localeCompare(b.releaseId),
+      )
+      .slice(0, limit);
+  }
+
   /** Test helper: total releases, used to assert that no duplicate was created. */
   count(): number {
     return this.rows.size;
@@ -321,6 +336,21 @@ export class InMemoryReviewRepository implements ReviewRepository {
   readonly rows = new Map<string, ReviewRecord>();
 
   async insert(record: ReviewRecord): Promise<void> {
+    // Models `reviews_one_open_per_release`, the partial unique index on
+    // (release_id) WHERE state = 'OPEN'. Postgres raises on the second open
+    // review for a release, and a fake that accepted it would let a test
+    // exercise a state the production store cannot hold — the operator queue
+    // would show two live decisions for one release, and resolving either would
+    // leave the other dangling. Found by the Postgres parity suite.
+    if (record.state === 'OPEN') {
+      for (const row of this.rows.values()) {
+        if (row.releaseId === record.releaseId && row.state === 'OPEN') {
+          throw new Error(
+            `duplicate key value violates unique constraint "reviews_one_open_per_release"`,
+          );
+        }
+      }
+    }
     this.rows.set(record.reviewId, record);
   }
 
@@ -333,6 +363,17 @@ export class InMemoryReviewRepository implements ReviewRepository {
       if (row.releaseId === id && row.state === 'OPEN') return row;
     }
     return null;
+  }
+
+  async listOpen(limit: number): Promise<readonly ReviewRecord[]> {
+    return [...this.rows.values()]
+      .filter(row => row.state === 'OPEN')
+      .sort(
+        (a, b) =>
+          timestampToEpochMillis(a.createdAt) - timestampToEpochMillis(b.createdAt) ||
+          a.reviewId.localeCompare(b.reviewId),
+      )
+      .slice(0, limit);
   }
 
   async resolve(

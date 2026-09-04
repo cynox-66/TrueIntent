@@ -229,6 +229,7 @@ export {
 
 export {
   INDETERMINATE_RELEASE_STATES,
+  OPERATOR_ATTENTION_RELEASE_STATES,
   RELEASE_STATES,
   ReleaseStateSchema,
   TERMINAL_RELEASE_STATES,
@@ -236,6 +237,7 @@ export {
   isTerminalReleaseState,
   isTransientReleaseState,
   moneyHasMoved,
+  requiresOperatorAttention,
   requiresReconciliation,
   type ReleaseRecord,
   type ReleaseState,
