@@ -38,17 +38,12 @@ import {
   remainingBudget,
   type SessionAuthorityRecord,
 } from '@capturelock/core';
-import {
-  AnthropicBuyerModel,
-  BuyerAgentRuntime,
-  DeterministicBuyerModel,
-  type AgentRunResult,
-  type BuyerModel,
-} from '@capturelock/agent';
+import { BuyerAgentRuntime, type AgentRunResult } from '@capturelock/agent';
 import type { Application } from '../composition.js';
 import { withIdempotency } from '../http-idempotency.js';
 // Shared with `server.ts`: one constant-time comparison, not two.
 import { hasAuthority, principalOf, unauthenticated } from '../auth.js';
+import { buyerModelLabel, selectBuyerModel, type SelectedBuyerModel } from '../buyer-model.js';
 
 /**
  * Session bounds, as the issuer states them.
@@ -147,22 +142,6 @@ function statusForVerdict(verdict: string): number {
   if (verdict === 'ALLOW') return 200;
   if (verdict === 'PAUSE') return 202;
   return 422;
-}
-
-/**
- * Builds the buyer model.
- *
- * Deterministic unless explicitly configured otherwise, so the demo and every
- * scenario are reproducible and no request reaches a network by default.
- */
-function buildModel(app: Application): BuyerModel {
-  if (app.config.buyerModel === 'anthropic' && app.config.anthropicApiKey !== undefined) {
-    return new AnthropicBuyerModel({
-      apiKey: app.config.anthropicApiKey,
-      model: app.config.anthropicModel,
-    });
-  }
-  return new DeterministicBuyerModel();
 }
 
 export function registerAgentRoutes(server: FastifyInstance, app: Application): void {
@@ -381,10 +360,12 @@ export function registerAgentRoutes(server: FastifyInstance, app: Application): 
         .send({ error: 'SESSION_NOT_OWNED', message: 'That session belongs to another user.' });
     }
 
+    const selected = selectBuyerModel(app.config);
     const runtime = new BuyerAgentRuntime({
       // The catalogue and a model. No repository, no provider, no kernel.
+      // Whichever model was selected reaches the same bounded tool vocabulary.
       catalog: app.productCatalog,
-      model: buildModel(app),
+      model: selected.model,
       maxSteps: body.maxSteps,
     });
 
@@ -398,13 +379,14 @@ export function registerAgentRoutes(server: FastifyInstance, app: Application): 
       {
         sessionId: session.sessionId,
         model: result.model,
+        modelKind: selected.kind,
         outcome: result.outcome.kind,
         steps: result.steps.length,
       },
       'bounded agent run finished',
     );
 
-    return reply.send(agentRunView(result));
+    return reply.send(agentRunView(result, selected));
   });
 
   // ------------------------------------------------------------- purchase --
@@ -587,9 +569,18 @@ export function registerAgentRoutes(server: FastifyInstance, app: Application): 
 }
 
 /** Projects an agent run for the wire. The step log is the interesting part. */
-function agentRunView(result: AgentRunResult): Record<string, unknown> {
+function agentRunView(
+  result: AgentRunResult,
+  selected: SelectedBuyerModel,
+): Record<string, unknown> {
   return {
     model: result.model,
+    // Which kind of model actually drove this run, so a screen states it
+    // rather than asking a viewer to recognise a model name. Carries no key,
+    // no key fragment and no prompt.
+    modelKind: selected.kind,
+    modelLabel: buyerModelLabel(selected.kind),
+    modelReason: selected.reason,
     outcome: result.outcome,
     steps: result.steps.map(step => ({
       index: step.index,

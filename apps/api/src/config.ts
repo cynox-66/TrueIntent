@@ -78,13 +78,23 @@ const ConfigSchema = z
     /**
      * Which buyer model the agent runs on.
      *
-     * `deterministic` by default, and deliberately so: the demo and every
-     * scenario must be reproducible, and no request should reach a network
-     * unless someone asked for it. Selecting `anthropic` without a key falls
-     * back rather than failing, because a missing model must never be a reason
-     * to skip a check — the worst case is an agent that cannot shop.
+     * `auto` — the default — uses Anthropic when `ANTHROPIC_API_KEY` is
+     * configured and the deterministic planner otherwise. The previous default
+     * required `BUYER_MODEL=anthropic` to be set *as well as* a key, which
+     * meant a configured key silently did nothing and the live path had never
+     * run.
+     *
+     * `deterministic` pins the planner regardless of what else is configured,
+     * which is what the offline suites and the scenario engine want:
+     * reproducible, no network, and predictable enough that a scenario is
+     * evidence about CaptureLock rather than about a model.
+     *
+     * Selecting a model never changes what the model may do. Whichever one
+     * runs reaches the same bounded tool vocabulary, and a missing key falls
+     * back rather than failing — a model that cannot be reached must never be
+     * a reason to skip a check.
      */
-    buyerModel: z.enum(['deterministic', 'anthropic']).default('deterministic'),
+    buyerModel: z.enum(['auto', 'deterministic', 'anthropic']).default('auto'),
     anthropicApiKey: z.string().min(1).optional(),
     anthropicModel: z.string().min(1).max(128).default('claude-sonnet-5'),
     /**

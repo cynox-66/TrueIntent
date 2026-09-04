@@ -251,9 +251,17 @@ function AgentReasoning({
 
   return (
     <Panel title="What the agent considered">
-      <p className="aside-note">
-        Model <span className="mono">{run.model}</span> · {run.steps.length} steps
-      </p>
+      {/*
+        Which model chose this, said plainly. A viewer should not have to
+        recognise a model name to know whether they are watching an LLM reason
+        or the deterministic fallback stand in for one.
+      */}
+      <div className="model-badge-row">
+        <span className={`model-badge is-${run.modelKind.toLowerCase()}`}>{run.modelLabel}</span>
+        <span className="model-name mono">{run.model}</span>
+        <span className="model-steps">{run.steps.length} steps</span>
+      </div>
+      <p className="aside-note">{run.modelReason}</p>
       <ul className="candidate-list">
         {run.observed
           .filter(product => product.category === 'dining')

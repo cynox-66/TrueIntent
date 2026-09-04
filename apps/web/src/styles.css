@@ -1771,3 +1771,46 @@ table.grid tr:last-child td {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+/* ------------------------------------------------------- which model ran -- */
+/*
+ * An LLM run and the deterministic fallback must be distinguishable at a
+ * glance. Someone watching a payment decision should not have to recognise a
+ * model name to know which they are looking at.
+ */
+
+.model-badge-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.model-badge {
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.45rem;
+  text-transform: uppercase;
+}
+
+.model-badge.is-anthropic {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.model-badge.is-deterministic {
+  border-color: var(--border-strong);
+  color: var(--text-dim);
+}
+
+.model-name,
+.model-steps {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}
+

@@ -1087,6 +1087,8 @@ async function agenticDemo(): Promise<void> {
   say('The agent looks at what the restaurant offers');
   const run = await call<{
     model: string;
+    modelLabel: string;
+    modelReason: string;
     outcome: { kind: string };
     observed: { sku: string; name: string; indicativeUnitPriceMinor: number; category: string }[];
   }>('POST', `/v1/sessions/${session.sessionId}/agent`, agentIn(session.sessionId), {
@@ -1094,7 +1096,8 @@ async function agenticDemo(): Promise<void> {
     goal: 'Thai dinner for two under 5000 rupees',
   });
   assert(run.status === 200, `agent run failed with ${String(run.status)}`);
-  detail(`model: ${run.body.model}`);
+  detail(`model: ${run.body.modelLabel} (${run.body.model})`);
+  detail(run.body.modelReason);
   const dining = run.body.observed.filter(product => product.category === 'dining');
   assert(dining.length >= 2, 'expected at least two dining candidates to compare');
   for (const product of dining) {

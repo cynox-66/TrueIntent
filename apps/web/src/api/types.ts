@@ -211,6 +211,16 @@ export type AgentRunOutcomeView =
 
 export interface AgentRunResponse {
   readonly model: string;
+  /**
+   * Which kind of model drove the run.
+   *
+   * Stated rather than inferred from the model's name: a viewer should not have
+   * to recognise `deterministic-planner` to know they are watching the fallback.
+   */
+  readonly modelKind: 'ANTHROPIC' | 'DETERMINISTIC';
+  readonly modelLabel: string;
+  /** Why that model is the one running. Never a key, fragment, or prompt. */
+  readonly modelReason: string;
   readonly outcome: AgentRunOutcomeView;
   readonly steps: readonly AgentStepView[];
   readonly observed: readonly AgentObservedProduct[];
