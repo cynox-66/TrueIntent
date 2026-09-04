@@ -55,9 +55,50 @@ export const DEMO_POLICY: PolicyDocument = {
   ],
 };
 
+/**
+ * A second policy whose spend ceiling pauses rather than denies.
+ *
+ * Every rule in `DEMO_POLICY` is a DENY, so a release bound to it can only ever
+ * be allowed or refused outright — the PAUSE path, and therefore the review
+ * queue and the whole operator flow, is unreachable with it. This policy makes
+ * that path reachable without weakening anything: PAUSE severity is the one
+ * thing a policy author is allowed to choose, precisely because the policy is
+ * server-side and bound at issuance, so an agent cannot select it.
+ *
+ * Seeded alongside the default rather than replacing it, so the existing demo
+ * behaviour is unchanged.
+ */
+export const DEMO_REVIEW_POLICY: PolicyDocument = {
+  policyId: 'household_review',
+  version: '1.0.0',
+  name: 'Household policy requiring review above a low ceiling',
+  createdAt: asTimestamp('2026-09-01T00:00:00.000Z'),
+  rules: [
+    {
+      ruleId: 'review_above_ceiling',
+      kind: 'MAX_TOTAL',
+      description: 'Spend above this ceiling needs a human',
+      severity: 'PAUSE',
+      max: { currency: 'INR', amountMinor: 100_000 },
+    },
+    {
+      ruleId: 'merchant_allowlist',
+      kind: 'MERCHANT_ALLOWLIST',
+      description: 'Approved merchants only',
+      severity: 'DENY',
+      merchantIds: ['merchant_alpha'],
+    },
+  ],
+};
+
 export async function seedDemoData(
   app: Application,
-): Promise<{ policyId: string; version: string }> {
+): Promise<{ policyId: string; version: string; reviewPolicyId: string }> {
   await app.deps.policies.insert(DEMO_POLICY);
-  return { policyId: DEMO_POLICY.policyId, version: DEMO_POLICY.version };
+  await app.deps.policies.insert(DEMO_REVIEW_POLICY);
+  return {
+    policyId: DEMO_POLICY.policyId,
+    version: DEMO_POLICY.version,
+    reviewPolicyId: DEMO_REVIEW_POLICY.policyId,
+  };
 }

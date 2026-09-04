@@ -2,8 +2,24 @@
   "name": "@capturelock/web",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock Operator and Verification Console (Placeholder)",
+  "type": "module",
+  "description": "CaptureLock Operator Console",
   "scripts": {
-    "info": "echo 'CaptureLock Web UI is reserved for Phase 2 implementation.'"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^30.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vite": "^6.4.3"
   }
 }

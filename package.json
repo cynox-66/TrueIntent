@@ -11,10 +11,10 @@
   },
   "scripts": {
     "dev": "pnpm --filter @capturelock/api dev",
-    "build": "tsc -b",
-    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "build": "tsc -b && pnpm --filter @capturelock/web build",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json && pnpm --filter @capturelock/web typecheck",
     "clean": "rm -rf packages/*/dist apps/*/dist packages/*/*.tsbuildinfo apps/*/*.tsbuildinfo",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config apps/web/vitest.config.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -32,21 +32,24 @@
     "scenario": "pnpm --filter @capturelock/eval scenario",
     "smoke:razorpay:capture": "tsx scripts/smoke-razorpay-capture.mts",
     "live:setup": "tsx scripts/live-lifecycle.mts setup",
-    "live:finish": "tsx scripts/live-lifecycle.mts finish"
+    "live:finish": "tsx scripts/live-lifecycle.mts finish",
+    "web": "pnpm --filter @capturelock/web dev",
+    "test:web": "vitest run --config apps/web/vitest.config.ts"
   },
   "devDependencies": {
+    "@capturelock/core": "workspace:*",
+    "@capturelock/integrations": "workspace:*",
+    "@capturelock/persistence": "workspace:*",
     "@eslint/js": "^9.20.0",
+    "@types/node": "^22.13.4",
+    "dotenv": "^16.4.7",
     "eslint": "^9.20.1",
     "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "prettier": "^3.5.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.0",
-    "vitest": "^3.0.5",
-    "@types/node": "^22.13.4",
-    "@capturelock/persistence": "workspace:*",
-    "@capturelock/integrations": "workspace:*",
-    "@capturelock/core": "workspace:*",
-    "dotenv": "^16.4.7"
+    "vitest": "^3.0.5"
   }
 }

@@ -101,8 +101,9 @@ pnpm dev                        # API on :3000, Postgres, fake provider
 pnpm scenario       # 7 end-to-end lifecycle scenarios
 pnpm eval           # baseline vs CaptureLock → reports/
 
-pnpm test           # 483 tests, offline, no Docker
+pnpm test           # 493 offline + 32 console tests, no Docker
 pnpm test:db        # 38 tests against real Postgres
+pnpm web            # operator console at :5173, proxying the API
 pnpm smoke:razorpay         # opt-in: live order semantics
 pnpm smoke:razorpay:capture # opt-in: live capture semantics (one browser step)
 

@@ -29,6 +29,11 @@ import { computeDecisionHash } from '@capturelock/core';
 import type { Application } from './composition.js';
 import { withIdempotency } from './http-idempotency.js';
 import { registerDevRoutes } from './routes/dev.js';
+import type {
+  EvidenceTimelineResponse,
+  OperatorQueueItem,
+  OperatorQueueResponse,
+} from './routes/contracts.js';
 import {
   AuthorizationIdParam,
   CaptureBody,
@@ -449,8 +454,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     // Reviews are fetched per release rather than listed and joined in memory:
     // `findOpenByRelease` is the existing accessor, it already encodes "open",
     // and the queue is bounded by OPERATOR_QUEUE_LIMIT.
-    const items = await Promise.all(
-      releases.map(async release => {
+    const items: OperatorQueueItem[] = await Promise.all(
+      releases.map(async (release): Promise<OperatorQueueItem> => {
         const review = await app.deps.reviews.findOpenByRelease(release.releaseId);
         return {
           releaseId: release.releaseId,
@@ -459,7 +464,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
           // Which of the two kinds of waiting this is. An operator resolves the
           // first and reconciles the second; conflating them would put the
           // wrong action in front of them.
-          waitingOn: release.state === 'PAUSED' ? ('REVIEW' as const) : ('RECONCILIATION' as const),
+          waitingOn: release.state === 'PAUSED' ? 'REVIEW' : 'RECONCILIATION',
           amount: release.amount,
           reasonCodes: release.lastReasonCodes,
           attemptCount: release.attemptCount,
@@ -481,7 +486,12 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       }),
     );
 
-    return reply.send({ items, count: items.length, limit: OPERATOR_QUEUE_LIMIT });
+    const body: OperatorQueueResponse = {
+      items,
+      count: items.length,
+      limit: OPERATOR_QUEUE_LIMIT,
+    };
+    return reply.send(body);
   });
 
   // --------------------------------------------------------------- reviews --
@@ -602,7 +612,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const { id } = AuthorizationIdParam.parse(request.params);
     const envelopes = await app.deps.evidence.listByChain(id);
     const head = await app.deps.evidence.head(id);
-    return reply.send({ chainId: id, head, envelopes });
+    const body: EvidenceTimelineResponse = { chainId: id, head, envelopes };
+    return reply.send(body);
   });
 
   server.get('/v1/evidence/:id', async (request, reply) => {

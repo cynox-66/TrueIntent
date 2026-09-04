@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import eslintConfigPrettier from 'eslint-config-prettier';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
@@ -56,6 +57,21 @@ export default tseslint.config(
           message: 'The kernel must be pure: take the time from context.evaluatedAt.',
         },
       ],
+    },
+  },
+  {
+    /**
+     * The operator console is the only React in the repository.
+     *
+     * The hooks rules are not style: a conditionally called hook or a stale
+     * closure over an operator credential is a correctness bug, and both are
+     * invisible in review. Scoped to the console so nothing else pays for them.
+     */
+    files: ['apps/web/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
     },
   },
   {
