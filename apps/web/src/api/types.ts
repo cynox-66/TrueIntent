@@ -134,3 +134,9 @@ export interface ReviewResolutionResponse {
   };
   readonly [key: string]: unknown;
 }
+
+export type {
+  AgentContextCapsuleView,
+  AgentContextResponse,
+  AgentSessionView,
+} from '@capturelock/api-contracts';

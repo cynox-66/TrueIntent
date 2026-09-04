@@ -27,6 +27,7 @@ import { useAsync } from '../lib/useAsync.js';
 import { formatAbsolute, formatMoney, formatRelative, humanizeState } from '../lib/format.js';
 import { hrefFor } from '../lib/router.js';
 import { GateStory, verdictTone } from './GateStory.js';
+import { AgentContextPanel } from './AgentContext.js';
 import {
   ErrorBlock,
   Field,
@@ -87,12 +88,7 @@ export function ReleaseDetail({
       {state.status === 'loading' && <Skeleton rows={4} />}
       {state.status === 'failed' && <ErrorBlock error={state.error} onRetry={reload} />}
       {state.status === 'ready' && (
-        <Loaded
-          detail={state.data}
-          operator={operator}
-          reload={reload}
-          refreshing={refreshing}
-        />
+        <Loaded detail={state.data} operator={operator} reload={reload} refreshing={refreshing} />
       )}
     </>
   );
@@ -119,7 +115,8 @@ function Loaded({
         <div className="page-title">
           <h1>{humanizeState(release.state)}</h1>
           <p className="page-sub">
-            {formatMoney(release.amount)} · release <span className="mono">{release.releaseId}</span>
+            {formatMoney(release.amount)} · release{' '}
+            <span className="mono">{release.releaseId}</span>
           </p>
         </div>
         <button type="button" className="btn" onClick={reload} disabled={refreshing}>
@@ -191,6 +188,14 @@ function Loaded({
           paused={paused}
           reconcilable={reconcilable}
         />
+
+        {/*
+          Placed above the mandate, because it answers the earlier question.
+          "Why did an agent think the user wanted this?" comes before "what was
+          it authorized to spend?" when an operator is deciding whether to
+          approve.
+        */}
+        <AgentContextPanel releaseId={release.releaseId} operator={operator} />
 
         <AuthorizationPanel authorizationId={release.authorizationId} />
 
@@ -288,12 +293,8 @@ function OperatorActions({
 
   return (
     <Panel title="Operator actions">
-      {paused && (
-        <ResolveReview detail={detail} operator={operator} onCompleted={onCompleted} />
-      )}
-      {reconcilable && (
-        <Reconcile detail={detail} operator={operator} onCompleted={onCompleted} />
-      )}
+      {paused && <ResolveReview detail={detail} operator={operator} onCompleted={onCompleted} />}
+      {reconcilable && <Reconcile detail={detail} operator={operator} onCompleted={onCompleted} />}
     </Panel>
   );
 }
@@ -408,9 +409,7 @@ function ResolveReview({
                 gate. If reality has moved since the pause, the release can still be refused.
               </>
             ) : (
-              <>
-                Rejecting aborts this release permanently. No money will move.
-              </>
+              <>Rejecting aborts this release permanently. No money will move.</>
             )}
           </p>
           <div className="actions-row">
@@ -535,9 +534,7 @@ function AuthorizationPanel({ authorizationId }: { authorizationId: string }): R
   return (
     <Panel title="Authorization context">
       {state.status === 'loading' && <Skeleton rows={1} />}
-      {state.status === 'failed' && (
-        <p className="muted">{describeError(state.error).detail}</p>
-      )}
+      {state.status === 'failed' && <p className="muted">{describeError(state.error).detail}</p>}
       {state.status === 'ready' && (
         <>
           <dl className="fields">

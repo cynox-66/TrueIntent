@@ -17,6 +17,7 @@
  */
 
 import type {
+  AgentContextResponse,
   AuthorizationView,
   ChainVerificationResponse,
   EvidenceDetailResponse,
@@ -182,6 +183,24 @@ export const api = {
       method: 'POST',
       operator,
       body: { resolution },
+    });
+  },
+
+  /**
+   * The agentic context behind a release, if it has one.
+   *
+   * Operator authority, because it discloses the user's stated intent and the
+   * agent's reasoning about it — which is more than the rest of this console
+   * shows about any single release.
+   */
+  agentContext(
+    releaseId: string,
+    operator: OperatorCredential,
+    signal?: AbortSignal,
+  ): Promise<AgentContextResponse> {
+    return request(`/v1/releases/${encodeURIComponent(releaseId)}/agent-context`, {
+      operator,
+      signal,
     });
   },
 

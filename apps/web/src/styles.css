@@ -972,3 +972,83 @@ table.grid tr:last-child td {
     flex-wrap: wrap;
   }
 }
+
+/* ------------------------------------------------------ agentic context -- */
+/*
+ * The panel's job is to let an operator tell three things apart at a glance:
+ * what the user said, what the server established, and what the agent claims.
+ * The first two are facts of different kinds; the third is a judgement, and it
+ * is bordered in the attention colour so it never reads as a verified figure.
+ */
+
+.agent-intent {
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.agent-intent-label {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-intent-text {
+  font-size: 1.05rem;
+  margin-top: 0.25rem;
+}
+
+.agent-cart {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.agent-cart-caption {
+  caption-side: top;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  text-align: left;
+  padding-bottom: 0.5rem;
+}
+
+.agent-cart th,
+.agent-cart td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  text-align: left;
+}
+
+.agent-cart th {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-cart tfoot td {
+  border-bottom: none;
+  border-top: 1px solid var(--border-strong);
+  font-weight: 600;
+}
+
+.agent-rationale {
+  background: var(--attention-bg);
+  border: 1px solid var(--attention-border);
+  border-radius: var(--radius);
+  margin-top: 1rem;
+  padding: 0.75rem;
+}
+
+.agent-rationale-label {
+  color: var(--attention);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-rationale-text {
+  margin-top: 0.35rem;
+}

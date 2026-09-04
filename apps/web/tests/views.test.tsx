@@ -11,6 +11,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import type {
+  AgentContextResponse,
   EvidenceEnvelope,
   EvidenceTimelineResponse,
   OperatorQueueItem,
@@ -298,6 +299,115 @@ describe('the queue', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/api is unreachable/i);
     expect(screen.queryByText(/nothing is waiting/i)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * An agentic context payload, shaped by the contract type the server is
+ * annotated with — so a fixture that drifts from the real response is a type
+ * error rather than a passing test.
+ */
+function agentContextBody(): AgentContextResponse {
+  return {
+    releaseId: 'rel_paused',
+    agentic: true,
+    capsuleHash: 'a'.repeat(64),
+    settlementState: 'RESERVED',
+    reservedMinor: 43_000,
+    evidenceEnvelopeId: 'env_1',
+    capsule: {
+      capsuleVersion: 1,
+      sessionId: 'sess_1',
+      userId: 'user_priya',
+      intentText: 'Thai curry dinner for 4, vegetarian, under 800 rupees',
+      boundsHash: 'b'.repeat(64),
+      merchantId: 'merchant_alpha',
+      catalogVersion: 'cat_0123456789abcdef',
+      lines: [
+        {
+          sku: 'SKU-THAI-CURRY-KIT',
+          quantity: 1,
+          unitPriceMinor: 28_000,
+          name: 'Thai Green Curry Kit',
+          category: 'thai-meal-kit',
+        },
+      ],
+      agentDecision: {
+        model: 'deterministic-planner',
+        steps: 4,
+        refusedSteps: 1,
+        rationale: 'Closest catalogue match to a vegetarian Thai dinner for four.',
+      },
+      authorizationId: 'auth_1',
+      intentHash: 'c'.repeat(64),
+      snapshotId: 'snap_1',
+      snapshotHash: 'd'.repeat(64),
+      currency: 'INR',
+      totalMinor: 43_000,
+      policyId: 'household_default',
+      policyVersion: '1.0.0',
+      policyHash: 'e'.repeat(64),
+      observedAt: AT,
+    },
+    session: {
+      sessionId: 'sess_1',
+      purpose: 'Thai curry dinner for 4, vegetarian, under 800 rupees',
+      state: 'ACTIVE',
+      boundsHash: 'b'.repeat(64),
+      bounds: {},
+      reservedMinor: 43_000,
+      spentMinor: 60_000,
+      remaining: { currency: 'INR', amountMinor: 97_000 },
+      createdAt: AT,
+      expiresAt: AT,
+    },
+  };
+}
+
+describe('the agentic context panel', () => {
+  it('shows the user intent, the server-priced cart and the session budget', async () => {
+    route({
+      '/v1/releases/rel_paused/agent-context': { body: agentContextBody() },
+      '/v1/releases/rel_paused': { body: releaseBody('PAUSED') },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+      '/v1/operator/queue': { body: queueBody([pausedItem()]) },
+    });
+    render(<ReleaseDetail releaseId="rel_paused" operator={OPERATOR} />);
+
+    // The user's own words, which is what an operator wants first.
+    expect(
+      await screen.findByText(/Thai curry dinner for 4, vegetarian, under 800 rupees/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('SKU-THAI-CURRY-KIT')).toBeInTheDocument();
+    expect(screen.getByText('deterministic-planner')).toBeInTheDocument();
+  });
+
+  it("labels the agent's reasoning as a judgement rather than a verified fact", async () => {
+    // The distinction an operator is being asked to make. If this label ever
+    // disappears, the rationale reads like one more established figure.
+    route({
+      '/v1/releases/rel_paused/agent-context': { body: agentContextBody() },
+      '/v1/releases/rel_paused': { body: releaseBody('PAUSED') },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+      '/v1/operator/queue': { body: queueBody([pausedItem()]) },
+    });
+    render(<ReleaseDetail releaseId="rel_paused" operator={OPERATOR} />);
+
+    expect(await screen.findByText(/a judgement, not a verified fact/i)).toBeInTheDocument();
+    expect(screen.getByText(/priced by the server from a live merchant read/i)).toBeInTheDocument();
+  });
+
+  it('says a plain-API release has no agentic context, rather than failing', async () => {
+    route({
+      '/v1/releases/rel_paused/agent-context': {
+        body: { releaseId: 'rel_paused', agentic: false, capsule: null, session: null },
+      },
+      '/v1/releases/rel_paused': { body: releaseBody('SETTLED') },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+    });
+    render(<ReleaseDetail releaseId="rel_paused" operator={OPERATOR} />);
+
+    expect(await screen.findByText(/not by a bounded buyer agent/i)).toBeInTheDocument();
   });
 });
 
@@ -630,7 +740,7 @@ describe('the gate story', () => {
    * used to drop them on the way out, so the console could say
    * LIVE_PRICE_DIVERGED and could not say what diverged from what.
    */
-  it('shows what changed, using the kernel\'s own recorded numbers', async () => {
+  it("shows what changed, using the kernel's own recorded numbers", async () => {
     route({
       '/v1/releases/rel_denied': { body: refusedAtCaptureBody() },
       '/v1/authorizations/auth_1': { body: AUTHORIZATION },
@@ -711,7 +821,9 @@ describe('which provider is wired', () => {
    */
   it('names the fake adapter as simulated', async () => {
     route({
-      '/health': { body: { status: 'ok', service: 'capturelock-api', paymentProvider: 'fake', timestamp: AT } },
+      '/health': {
+        body: { status: 'ok', service: 'capturelock-api', paymentProvider: 'fake', timestamp: AT },
+      },
       '/v1/operator/queue': { status: 403, body: { error: 'FORBIDDEN' } },
     });
     render(<App />);

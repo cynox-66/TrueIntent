@@ -122,3 +122,73 @@ export interface ReleaseEvaluationSummary {
   readonly decisionHash: string;
   readonly evaluatedAt: Timestamp;
 }
+
+/**
+ * `GET /v1/releases/:id/agent-context`.
+ *
+ * Answers the question the operator console cannot otherwise ask: *why did an
+ * agent think the user wanted this?* A release created through the plain API
+ * has no agentic context, and says so with `agentic: false` rather than 404 —
+ * the console asks about every release it shows.
+ */
+export interface AgentContextCapsuleView {
+  readonly capsuleVersion: number;
+  readonly sessionId: string;
+  readonly userId: string;
+  /** The user's own words. Evidence only; no deterministic check reads it. */
+  readonly intentText: string;
+  readonly boundsHash: string;
+  readonly merchantId: string;
+  /** Which version of the catalogue the agent was looking at when it chose. */
+  readonly catalogVersion: string;
+  readonly lines: readonly {
+    readonly sku: string;
+    readonly quantity: number;
+    /** Server-priced, from the snapshot. Never the agent's claim. */
+    readonly unitPriceMinor: number;
+    readonly name: string;
+    readonly category: string;
+  }[];
+  readonly agentDecision: {
+    readonly model: string;
+    readonly steps: number;
+    readonly refusedSteps: number;
+    /** The agent's own justification. A judgement, clearly labelled as one. */
+    readonly rationale: string;
+  };
+  readonly authorizationId: string;
+  readonly intentHash: string;
+  readonly snapshotId: string;
+  readonly snapshotHash: string;
+  readonly currency: string;
+  readonly totalMinor: number;
+  readonly policyId: string;
+  readonly policyVersion: string;
+  readonly policyHash: string;
+  readonly observedAt: Timestamp;
+}
+
+export interface AgentSessionView {
+  readonly sessionId: string;
+  readonly purpose: string;
+  readonly state: 'ACTIVE' | 'REVOKED' | 'EXPIRED';
+  readonly boundsHash: string;
+  readonly bounds: Readonly<Record<string, unknown>>;
+  readonly reservedMinor: number;
+  readonly spentMinor: number;
+  readonly remaining: { readonly currency: string; readonly amountMinor: number };
+  readonly createdAt: Timestamp;
+  readonly expiresAt: Timestamp;
+}
+
+export interface AgentContextResponse {
+  readonly releaseId: string;
+  /** False for a release created through the plain API. Not an error. */
+  readonly agentic: boolean;
+  readonly capsuleHash?: string;
+  readonly settlementState?: 'RESERVED' | 'SETTLED' | 'RELEASED';
+  readonly reservedMinor?: number;
+  readonly capsule: AgentContextCapsuleView | null;
+  readonly evidenceEnvelopeId?: string | null;
+  readonly session: AgentSessionView | null;
+}
