@@ -31,6 +31,8 @@ import { randomUUID } from 'node:crypto';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = process.env['CAPTURELOCK_API'] ?? 'http://localhost:3000';
+/** Where the console is served, for the links this demo prints at the end. */
+const WEB = process.env['CAPTURELOCK_WEB'] ?? 'http://localhost:5173';
 
 /** An agent holds a principal and nothing else. */
 const AGENT = {
@@ -936,18 +938,355 @@ async function agentPurchase(): Promise<void> {
   detail('The evidence chain opens with what the agent was trying to buy, and verifies.');
 }
 
+// =============================================================== agentic ==
+//
+// `pnpm demo agentic` — the canonical demonstration.
+//
+// One delegation, three outcomes, in the order that makes the argument:
+//
+//   1. AUTHORITY VIOLATION  the agent asks for something outside what it was
+//                           delegated. Refused before a mandate exists, before
+//                           the merchant is consulted at all.
+//   2. REALITY DRIFT        the agent asks for something inside its delegation,
+//                           is allowed, and the restaurant reprices before the
+//                           money moves. Refused at the second gate.
+//   3. THE PURCHASE         nothing is wrong, and it goes through.
+//
+// The two refusals are deliberately separated. Conflating them would make this
+// look like one check doing double duty; they are different checks catching
+// different failures at different moments, and only the second one needs the
+// merchant to have changed its mind.
+//
+// Every step asserts. Nothing here prints a success it did not have.
+
+const DINNER_SKU = 'SKU-THAI-DINNER-2';
+const TASTING_SKU = 'SKU-THAI-DINNER-DLX';
+/** 4,799 + 150 service = 4,949 all-in. */
+const DINNER_UNIT_MINOR = 479_900;
+/** 5,349 + 150 service = 5,499 all-in, past the 5,000 delegation. */
+const DRIFTED_UNIT_MINOR = 534_900;
+const SERVICE_MINOR = 15_000;
+const DELEGATED_MINOR = 500_000;
+
+interface DemoSession {
+  sessionId: string;
+  principal: { userId: string; sessionId: string };
+  merchantId: string;
+}
+
+interface AgenticPurchase {
+  authorizationId?: string;
+  releaseId?: string | null;
+  verdict?: string;
+  reasonCodes?: string[];
+  moneyMoved?: boolean;
+  capsuleHash?: string;
+  error?: string;
+  message?: string;
+}
+
+interface TimelineView {
+  session: { spentMinor: number; reservedMinor: number; remaining: { amountMinor: number } };
+  purchases: {
+    authorizationId: string;
+    releaseId: string | null;
+    state: string | null;
+    moneyMoved: boolean;
+    settlementState: string;
+    gates: { gate: string; verdict: string; reasonCodes: string[] }[];
+    evidence: { chainId: string; envelopeCount: number; kinds: string[]; valid: boolean };
+  }[];
+  anyMoneyMoved: boolean;
+  paymentProvider: string;
+}
+
+async function setUnitPrice(sku: string, unitPriceMinor: number): Promise<void> {
+  const { status } = await call(
+    'POST',
+    '/v1/dev/catalog',
+    { 'content-type': 'application/json' },
+    { kind: 'SET_PRICE', sku, unitPriceMinor },
+  );
+  if (status === 404) {
+    throw new DemoError(
+      'The development catalogue route is not available. This demo needs PAYMENT_PROVIDER=fake ' +
+        '(the default) and a non-production NODE_ENV.',
+    );
+  }
+  assert(status === 200, `catalogue mutation failed with ${String(status)}`);
+}
+
+/**
+ * Delegates the session through the dev route.
+ *
+ * The same route the browser demo uses, and for the same reason: delegating a
+ * budget is issuer authority, and the point of this system is that the agent
+ * never holds it.
+ */
+async function delegate(): Promise<DemoSession> {
+  const created = await call<DemoSession>('POST', '/v1/dev/demo-session', {
+    'content-type': 'application/json',
+  });
+  if (created.status === 404) {
+    throw new DemoError(
+      'The demo-session route is not available. This demo needs PAYMENT_PROVIDER=fake and a ' +
+        'non-production NODE_ENV.',
+    );
+  }
+  assert(created.status === 201, `session delegation failed with ${String(created.status)}`);
+  return created.body;
+}
+
+async function ask(
+  session: DemoSession,
+  sku: string,
+  label: string,
+  rationale: string,
+): Promise<{ status: number; body: AgenticPurchase }> {
+  return call<AgenticPurchase>(
+    'POST',
+    `/v1/sessions/${session.sessionId}/purchase`,
+    agentIn(session.sessionId),
+    {
+      merchantId: session.merchantId,
+      lines: [{ sku, quantity: 1 }],
+      idempotencyKey: key(label),
+      rationale,
+      agentModel: 'deterministic-planner',
+      agentSteps: 3,
+      agentRefusedSteps: 0,
+      catalogVersion: 'demo',
+    },
+  );
+}
+
+async function timelineOf(session: DemoSession): Promise<TimelineView> {
+  const view = await call<TimelineView>(
+    'GET',
+    `/v1/sessions/${session.sessionId}/timeline`,
+    agentIn(session.sessionId),
+  );
+  assert(view.status === 200, `timeline read failed with ${String(view.status)}`);
+  return view.body;
+}
+
+async function agenticDemo(): Promise<void> {
+  // The merchant's world, set to a known state. The drift scene moves it later.
+  await setUnitPrice(DINNER_SKU, DINNER_UNIT_MINOR);
+
+  // ---------------------------------------------------------------- setup --
+  say('The user delegates a bounded commerce session');
+  detail('"Thai dinner for two, under ₹5,000."');
+  const session = await delegate();
+  detail(`session ${session.sessionId}`);
+  detail(`${inr(DELEGATED_MINOR)} total · ${inr(DELEGATED_MINOR)} per purchase · category dining`);
+  detail(
+    'Delegated with the ISSUER key, server-side. The agent below holds a principal and nothing else.',
+  );
+
+  say('The agent looks at what the restaurant offers');
+  const run = await call<{
+    model: string;
+    outcome: { kind: string };
+    observed: { sku: string; name: string; indicativeUnitPriceMinor: number; category: string }[];
+  }>('POST', `/v1/sessions/${session.sessionId}/agent`, agentIn(session.sessionId), {
+    merchantId: session.merchantId,
+    goal: 'Thai dinner for two under 5000 rupees',
+  });
+  assert(run.status === 200, `agent run failed with ${String(run.status)}`);
+  detail(`model: ${run.body.model}`);
+  const dining = run.body.observed.filter(product => product.category === 'dining');
+  assert(dining.length >= 2, 'expected at least two dining candidates to compare');
+  for (const product of dining) {
+    detail(
+      `  ${product.name} — listed ${inr(product.indicativeUnitPriceMinor)} ` +
+        `(+ ${inr(SERVICE_MINOR)} service = ${inr(product.indicativeUnitPriceMinor + SERVICE_MINOR)})`,
+    );
+  }
+
+  // ------------------------------------------------- 1. authority violation --
+  console.info(`\n${BOLD}${YELLOW}--- 1. THE AGENT REACHES PAST ITS DELEGATION ---${OFF}`);
+
+  say("The agent asks for the chef's tasting menu");
+  detail(`${inr(649_900 + SERVICE_MINOR)} all-in, against a ${inr(DELEGATED_MINOR)} delegation`);
+  const overreach = await ask(
+    session,
+    TASTING_SKU,
+    'overreach',
+    'Reached for the tasting menu despite the delegated ceiling.',
+  );
+
+  assert(overreach.status === 422, `expected a refusal, got ${String(overreach.status)}`);
+  assert(
+    overreach.body.error === 'SESSION_BUDGET_EXCEEDED',
+    `expected SESSION_BUDGET_EXCEEDED, got ${String(overreach.body.error)}`,
+  );
+  verdict(RED, `REFUSED: ${String(overreach.body.error)}`);
+  detail(String(overreach.body.message));
+  assert(overreach.body.releaseId == null, 'no release should exist for a refused delegation');
+  verdict(GREEN, 'No mandate created · the merchant was never consulted · ₹0 moved');
+  detail(
+    'Whether the price was right never came up. The agent was not authorized to spend that much.',
+  );
+
+  // ------------------------------------------------------- 2. reality drift --
+  console.info(`\n${BOLD}${YELLOW}--- 2. REALITY CHANGES UNDER THE AGENT ---${OFF}`);
+
+  say('The agent asks for the dinner for two, inside its delegation');
+  const drift = await ask(
+    session,
+    DINNER_SKU,
+    'drift',
+    'Closest match to a Thai dinner for two, inside the delegated budget.',
+  );
+  assert(drift.status === 200, `the order gate refused: ${JSON.stringify(drift.body)}`);
+  assert(drift.body.verdict === 'ALLOW', `expected ALLOW, got ${String(drift.body.verdict)}`);
+  verdict(GREEN, `GATE 1: ALLOW — terms bound at ${inr(DINNER_UNIT_MINOR + SERVICE_MINOR)}`);
+  detail('Priced by the server from a live read. The agent never stated a total.');
+  detail(`capsule ${String(drift.body.capsuleHash).slice(0, 16)}…`);
+  const driftAuthorization = String(drift.body.authorizationId);
+  const driftRelease = String(drift.body.releaseId);
+
+  say('The payer authorizes at the provider');
+  const authorized = await call(
+    'POST',
+    '/v1/dev/simulate-authorization',
+    {
+      'content-type': 'application/json',
+    },
+    { releaseId: driftRelease },
+  );
+  assert(authorized.status === 200, `payer authorization failed with ${String(authorized.status)}`);
+  detail('Funds are held. Nothing has been taken — that is what the second gate is for.');
+
+  say('The restaurant reprices before the money moves');
+  await setUnitPrice(DINNER_SKU, DRIFTED_UNIT_MINOR);
+  detail(
+    `${inr(DINNER_UNIT_MINOR + SERVICE_MINOR)} → ${inr(DRIFTED_UNIT_MINOR + SERVICE_MINOR)} all-in`,
+  );
+  detail('Nothing in CaptureLock changed. The world did.');
+
+  say('The agent asks CaptureLock to capture');
+  const refused = await call<AgenticPurchase>(
+    'POST',
+    `/v1/sessions/${session.sessionId}/capture`,
+    agentIn(session.sessionId),
+    { authorizationId: driftAuthorization, idempotencyKey: key('driftcap') },
+  );
+
+  assert(refused.status === 422, `expected a refusal, got ${String(refused.status)}`);
+  const driftCodes = refused.body.reasonCodes ?? [];
+  verdict(RED, `GATE 2: DENY — ${driftCodes.join(', ')}`);
+  assert(
+    driftCodes.includes('LIVE_PRICE_DIVERGED'),
+    `expected LIVE_PRICE_DIVERGED, got ${driftCodes.join(', ')}`,
+  );
+  assert(refused.body.moneyMoved === false, 'money must not have moved');
+  verdict(GREEN, 'moneyMoved: false — the provider was never asked to capture');
+
+  // Restore the world before the last scene.
+  await setUnitPrice(DINNER_SKU, DINNER_UNIT_MINOR);
+
+  // -------------------------------------------------------- 3. the purchase --
+  console.info(`\n${BOLD}${YELLOW}--- 3. NOTHING IS WRONG, AND IT GOES THROUGH ---${OFF}`);
+
+  say('The agent asks again, against an unchanged menu');
+  const good = await ask(
+    session,
+    DINNER_SKU,
+    'buy',
+    'Closest match to a Thai dinner for two, inside the delegated budget.',
+  );
+  assert(good.status === 200, `the order gate refused: ${JSON.stringify(good.body)}`);
+  verdict(GREEN, `GATE 1: ${String(good.body.verdict)}`);
+  const goodAuthorization = String(good.body.authorizationId);
+
+  await call(
+    'POST',
+    '/v1/dev/simulate-authorization',
+    { 'content-type': 'application/json' },
+    {
+      releaseId: String(good.body.releaseId),
+    },
+  );
+
+  const captured = await call<AgenticPurchase>(
+    'POST',
+    `/v1/sessions/${session.sessionId}/capture`,
+    agentIn(session.sessionId),
+    { authorizationId: goodAuthorization, idempotencyKey: key('cap') },
+  );
+  assert(captured.status === 200, `the capture gate refused: ${JSON.stringify(captured.body)}`);
+  assert(captured.body.moneyMoved === true, 'money should have moved');
+  verdict(GREEN, `GATE 2: ALLOW — ${inr(DINNER_UNIT_MINOR + SERVICE_MINOR)} captured`);
+
+  // ------------------------------------------------------------- the record --
+  console.info(`\n${BOLD}What the server says happened${OFF}`);
+  const timeline = await timelineOf(session);
+
+  detail(`payment provider: ${timeline.paymentProvider}`);
+  for (const purchase of timeline.purchases) {
+    const gates = purchase.gates.map(g => `${g.gate}:${g.verdict}`).join(' → ') || 'no gate ran';
+    detail(
+      `${purchase.authorizationId.slice(0, 18)}… ${String(purchase.state ?? 'no release')} · ` +
+        `${gates} · moneyMoved=${String(purchase.moneyMoved)} · hold=${purchase.settlementState}`,
+    );
+    if (purchase.evidence.envelopeCount > 0) {
+      detail(`    evidence: ${purchase.evidence.kinds.join(' → ')}`);
+      assert(purchase.evidence.valid, 'an evidence chain failed verification');
+    }
+  }
+
+  const moved = timeline.purchases.filter(purchase => purchase.moneyMoved);
+  assert(
+    moved.length === 1,
+    `exactly one purchase should have moved money, got ${String(moved.length)}`,
+  );
+  assert(
+    timeline.session.spentMinor === DINNER_UNIT_MINOR + SERVICE_MINOR,
+    `session spend should be ${String(DINNER_UNIT_MINOR + SERVICE_MINOR)}, got ${String(timeline.session.spentMinor)}`,
+  );
+  assert(
+    timeline.session.reservedMinor === 0,
+    `refused purchases must release their holds, ${String(timeline.session.reservedMinor)} still held`,
+  );
+
+  detail(
+    `session spent ${inr(timeline.session.spentMinor)} of ${inr(DELEGATED_MINOR)} · ` +
+      `${inr(timeline.session.remaining.amountMinor)} remaining · ${inr(timeline.session.reservedMinor)} held`,
+  );
+
+  console.info(`\n${BOLD}Open it in the console${OFF}`);
+  detail(`agent view:    ${WEB}/#/agent/${session.sessionId}`);
+  detail(`operator view: ${WEB}/#/operator`);
+
+  console.info(`\n${BOLD}What this demonstrated${OFF}`);
+  detail('An agent asked for something outside its delegation. Refused before a mandate existed.');
+  detail('An agent asked for something inside it, and reality moved. Refused at the capture gate.');
+  detail('Two different protections, catching two different failures, at two different moments.');
+  detail('One legitimate purchase went through, and only that one consumed the budget.');
+  detail('Every decision is in a signed, verified evidence chain.');
+}
+
 const DEMOS: Record<string, { title: string; run: () => Promise<void> }> = {
   drift: { title: 'Price drift: allowed at the order gate, refused at capture', run: priceDrift },
   review: { title: 'Operator review: paused, approved, and still re-verified', run: reviewFlow },
   happy: { title: 'Nominal purchase: verified twice, then captured', run: happyPath },
+  agentic: {
+    title: 'Agentic commerce: an AI agent shopping inside a delegated budget',
+    run: agenticDemo,
+  },
+  // The earlier, grocery-basket telling of the same story. Kept because it
+  // exercises a different delegation shape — several small purchases against an
+  // aggregate — which `agentic` does not.
   agent: {
-    title: 'Bounded agentic commerce: an AI agent shopping inside delegated authority',
+    title: 'Bounded agentic commerce: aggregate budget across several purchases',
     run: agentPurchase,
   },
 };
 
 async function main(): Promise<void> {
-  const wanted = process.argv[2] ?? 'drift';
+  const wanted = process.argv[2] ?? 'agentic';
   const demo = DEMOS[wanted];
   if (demo === undefined) {
     console.error(`No demo named "${wanted}". Available: ${Object.keys(DEMOS).join(', ')}`);
