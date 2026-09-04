@@ -5,7 +5,7 @@
  * hashed — integrity theatre, since nothing recomputed it and the agent chose
  * both sides of the comparison.
  *
- * Here the snapshot is issued by CaptureLock. The agent proposes SKUs,
+ * Here the snapshot is issued by TrueIntent. The agent proposes SKUs,
  * quantities and a destination; the server reads live merchant state, prices the
  * cart itself, computes the total itself, and returns an opaque snapshot id. At
  * release the agent can only point at that id. The agent never gets to state a
@@ -28,7 +28,7 @@ export interface VerifiedSnapshot {
   readonly merchantId: MerchantId;
   readonly currency: CurrencyCode;
   /**
-   * The cart as CaptureLock priced it: line unit prices and fee adjustments come
+   * The cart as TrueIntent priced it: line unit prices and fee adjustments come
    * from the live merchant read, not from the agent.
    */
   readonly cart: ProposedCart;

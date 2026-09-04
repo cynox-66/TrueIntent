@@ -1,5 +1,5 @@
 /**
- * The cart an agent proposes, and the arithmetic CaptureLock recomputes over it.
+ * The cart an agent proposes, and the arithmetic TrueIntent recomputes over it.
  *
  * Everything in `ProposedCart` is untrusted input. The agent's declared total is
  * kept only so we can compare it against our own recomputation: a mismatch is

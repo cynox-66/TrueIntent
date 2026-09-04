@@ -6,7 +6,7 @@
 
 ## Context
 
-Every integrity claim CaptureLock makes rests on a hash: the snapshot hash that
+Every integrity claim TrueIntent makes rests on a hash: the snapshot hash that
 pins a price, the intent hash that pins a budget, the policy hash that pins the
 rules, the decision hash that makes a verdict reproducible, and the chain hash
 that makes the ledger tamper-evident.

@@ -1,5 +1,5 @@
 /**
- * The live session: what the agent did, and what CaptureLock made of it.
+ * The live session: what the agent did, and what TrueIntent made of it.
  *
  * Two rules shaped this screen.
  *
@@ -67,7 +67,7 @@ export function AgentSession({ sessionId, scenario }: AgentSessionProps): ReactN
   const [steps, setSteps] = useState<readonly Step[]>([]);
   const [run, setRun] = useState<AgentRunResponse | null>(null);
   /**
-   * The SKU actually submitted to CaptureLock.
+   * The SKU actually submitted to TrueIntent.
    *
    * Not always what the planner picked: the overreach scenario deliberately
    * sends something the planner rejected, and badging the planner's choice
@@ -296,7 +296,7 @@ function AgentReasoning({
 /** Both gate decisions, with the findings that produced them. */
 function GateEvidence({ purchase }: { purchase: AgentTimelinePurchase }): ReactNode {
   return (
-    <Panel title="What CaptureLock checked">
+    <Panel title="What TrueIntent checked">
       {purchase.gates.length === 0 ? (
         <p className="muted">
           No gate ran. The request was refused against the delegation before any mandate was
@@ -432,7 +432,7 @@ function actorLabel(actor: Step['actor']): string {
     case 'merchant':
       return 'Restaurant';
     case 'capturelock':
-      return 'CaptureLock';
+      return 'TrueIntent';
     case 'provider':
       return 'Razorpay';
   }
@@ -518,10 +518,10 @@ async function runScenario(input: {
       : 'Inside the delegation, on the agent’s own reading of the menu.',
   });
 
-  // ---- ask CaptureLock ---------------------------------------------------
+  // ---- ask TrueIntent ---------------------------------------------------
   push({
     key: 'gate1',
-    label: 'Asked CaptureLock to verify the purchase',
+    label: 'Asked TrueIntent to verify the purchase',
     actor: 'agent',
     status: 'running',
   });
@@ -597,12 +597,12 @@ async function runScenario(input: {
       label: `Reprices the dinner · ${money(DINNER_PRICE_MINOR + 15_000)} → ${money(DRIFTED_PRICE_MINOR + 15_000)}`,
       actor: 'merchant',
       status: 'done',
-      detail: 'Nothing in CaptureLock changed. The world did.',
+      detail: 'Nothing in TrueIntent changed. The world did.',
     });
   }
 
   // ---- the capture gate --------------------------------------------------
-  push({ key: 'gate2', label: 'Asked CaptureLock to capture', actor: 'agent', status: 'running' });
+  push({ key: 'gate2', label: 'Asked TrueIntent to capture', actor: 'agent', status: 'running' });
   const captured = await api.requestCapture(
     sessionId,
     {

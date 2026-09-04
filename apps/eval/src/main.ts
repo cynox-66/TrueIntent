@@ -99,7 +99,7 @@ async function main(): Promise<void> {
 
   const failures = results.filter(r => !r.asExpected);
   if (metrics.gatedUnsafeCharges > 0) {
-    console.error(`\nFAIL: CaptureLock allowed ${metrics.gatedUnsafeCharges} unsafe charge(s).`);
+    console.error(`\nFAIL: TrueIntent allowed ${metrics.gatedUnsafeCharges} unsafe charge(s).`);
     process.exit(1);
   }
   if (failures.length > 0) {

@@ -1,5 +1,5 @@
 /**
- * Structured error taxonomy for CaptureLock.
+ * Structured error taxonomy for TrueIntent.
  *
  * Every error carries a stable machine-readable `code`. Errors are never used to
  * carry secrets, raw credentials, or provider response bodies.

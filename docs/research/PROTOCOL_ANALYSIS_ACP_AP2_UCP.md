@@ -26,9 +26,9 @@ The peer-reviewed security analysis of AP2 v0.2 identifies critical attack vecto
 
 ---
 
-## 3. The Role of CaptureLock
+## 3. The Role of TrueIntent
 
-CaptureLock provides the missing contextual verifier:
+TrueIntent provides the missing contextual verifier:
 
 - Evaluates live merchant state ($row\_hash$, stock, price) at the exact moment of charge.
 - Verifies that pre-signature intent matches post-negotiation cart state.

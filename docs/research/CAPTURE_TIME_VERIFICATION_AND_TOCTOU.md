@@ -6,7 +6,7 @@
 > an _honest_ agent holding stale data: a malicious one reads the current hash and
 > sends that, and the check passes while looking like it worked. The implemented
 > defence compares **the terms about to be charged against the terms the merchant
-> will honour now**, and CaptureLock issues the snapshot rather than accepting one.
+> will honour now**, and TrueIntent issues the snapshot rather than accepting one.
 > Row hashes remain, computed by us, for drift attribution in the evidence.
 > See [ADR-008](../decisions/ADR-008-freshness-proposed-versus-live.md).
 >
@@ -35,7 +35,7 @@ TIME ─────────────────────────
 Authorizes ₹800 budget                                        Is this price still ₹800?
 at 10:00 AM                                                   Is stock available?
                                                               Did intent drift?
-                                                              [CAPTURELOCK VERIFICATION]
+                                                              [TRUEINTENT VERIFICATION]
 ```
 
 ---
@@ -46,12 +46,12 @@ A Time-of-Check to Time-of-Use race condition occurs when an agent checks a pric
 
 ### The Row-Hashing Solution
 
-CaptureLock solves TOCTOU using cryptographically grounded row hashing:
+TrueIntent solves TOCTOU using cryptographically grounded row hashing:
 
 1. When an agent queries catalog items, each row contains an authoritative `row_hash` computed over:
    $$\text{row\_hash} = H(\text{sku} \parallel \text{price} \parallel \text{stock} \parallel \text{updated\_at})$$
 2. The agent includes these observed `sourceRowHash` values in its `CartSnapshot`.
-3. At the exact moment `/sessions/authorize_capture` is called, CaptureLock re-queries the merchant's source-of-truth rows.
+3. At the exact moment `/sessions/authorize_capture` is called, TrueIntent re-queries the merchant's source-of-truth rows.
 4. If any live `row_hash` differs from the snapshot hash, or if $\Delta t = (t_{\text{capture}} - t_{\text{observed}}) > W$ (where $W$ is the freshness window, e.g. 30 seconds), the transaction is refused with `STALE_PRICE` or `STALE_INVENTORY`.
 
 ---
@@ -60,7 +60,7 @@ CaptureLock solves TOCTOU using cryptographically grounded row hashing:
 
 Autonomous agents frequently encounter partial availability or missing items. Without strict intent alignment, an agent attempting to "satisfy the prompt" may substitute items that obey mathematical budget rules but violate user intent.
 
-CaptureLock applies a two-tier evaluation:
+TrueIntent applies a two-tier evaluation:
 
 - **Tier 1 (Deterministic Floor)**: Hard constraints compiled from user preferences (e.g., maximum budget, dietary restrictions like vegetarian-only, permitted merchant domains).
 - **Tier 2 (Advisory Spirit Check)**: Semantic alignment evaluation comparing the original raw intent prompt with the synthesized cart manifest:

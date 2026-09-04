@@ -2,7 +2,7 @@
   "name": "@capturelock/kernel",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock deterministic verification kernel, release state machine and orchestration services",
+  "description": "TrueIntent deterministic verification kernel, release state machine and orchestration services",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

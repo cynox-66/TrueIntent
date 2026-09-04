@@ -156,7 +156,7 @@ describe('webhook safety', () => {
     expect((await h.webhookInbox.findByEventId('evt_unknown'))?.status).toBe('IGNORED_UNKNOWN');
   });
 
-  it('cannot create a release for a payment CaptureLock never made', async () => {
+  it('cannot create a release for a payment TrueIntent never made', async () => {
     const h = new Harness();
     const result = await h.webhookService.ingest({
       providerEventId: 'evt_ghost',

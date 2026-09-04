@@ -172,7 +172,7 @@ export function describeError(error: unknown): { title: string; detail: string }
     return {
       title: 'The API is unreachable',
       detail:
-        'No response from the CaptureLock API. Check that it is running and that the console is pointed at it.',
+        'No response from the TrueIntent API. Check that it is running and that the console is pointed at it.',
     };
   }
   if (error instanceof ApiError) {

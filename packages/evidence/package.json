@@ -2,7 +2,7 @@
   "name": "@capturelock/evidence",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock Evidence Envelope and Replayable Proof Ledger Contracts",
+  "description": "TrueIntent Evidence Envelope and Replayable Proof Ledger Contracts",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

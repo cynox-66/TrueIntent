@@ -48,7 +48,7 @@ function Shell(): ReactNode {
           }}
         >
           <span className="brand-mark">◆</span>
-          <span>CaptureLock</span>
+          <span>TrueIntent</span>
           <span className="brand-sub">
             {operatorSurface ? 'Operator Console' : 'Agentic Commerce'}
           </span>

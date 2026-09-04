@@ -31,4 +31,4 @@ While Razorpay and its partners are building the rails (UPI Reserve Pay) and the
 
 > **How does a payment gateway prove that an autonomous agent transacting under delegated authorization is charging the right cart, at the right price, according to live merchant state and genuine user intent?**
 
-CaptureLock directly targets this missing verifier primitive.
+TrueIntent directly targets this missing verifier primitive.

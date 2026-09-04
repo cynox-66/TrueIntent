@@ -98,7 +98,7 @@ created, which pushes real work upstream into normalization. That is the correct
 place for it: an ambiguous intent should be resolved while a human is present,
 not while a payment is in flight.
 
-**Honest limitation.** CaptureLock verifies against the constraints it was given.
+**Honest limitation.** TrueIntent verifies against the constraints it was given.
 If normalization produces constraints that do not match what the user meant — an
 LLM inferring "under 5,000" as a per-item rather than a per-cart ceiling — the
 kernel will faithfully enforce the wrong thing. `normalization.confirmedByUser`

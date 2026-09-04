@@ -132,7 +132,7 @@ export const SkuSchema = externalIdSchema<Sku>('SKU');
 /**
  * Client-supplied idempotency key.
  *
- * Deliberately opaque to CaptureLock: it dedups *requests*. It does not and
+ * Deliberately opaque to TrueIntent: it dedups *requests*. It does not and
  * cannot bound money movement on its own, because the agent chooses it. The
  * server-derived receipt below is what bounds money movement.
  */

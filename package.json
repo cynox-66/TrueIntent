@@ -2,8 +2,8 @@
   "name": "capturelock-monorepo",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock - Payment execution verification layer for agentic commerce",
-  "author": "CaptureLock Engineering",
+  "description": "TrueIntent - Payment execution verification layer for agentic commerce",
+  "author": "TrueIntent Engineering",
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0",

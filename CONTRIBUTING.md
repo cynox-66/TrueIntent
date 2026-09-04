@@ -1,6 +1,6 @@
-# Contributing to CaptureLock
+# Contributing to TrueIntent
 
-Thank you for contributing to CaptureLock! This document outlines our development process, code quality standards, and contribution workflow.
+Thank you for contributing to TrueIntent! This document outlines our development process, code quality standards, and contribution workflow.
 
 ---
 
@@ -58,7 +58,7 @@ Two further suites are opt-in but should be run when touching what they cover:
 
 ```bash
 pnpm db:up && pnpm test:db   # concurrency and DB constraints against real Postgres
-pnpm eval                    # baseline vs CaptureLock; exits non-zero on a regression
+pnpm eval                    # baseline vs TrueIntent; exits non-zero on a regression
 ```
 
 ### Which suite proves what

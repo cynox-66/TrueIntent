@@ -87,7 +87,7 @@ export function liveItemHashInput(item: LiveItemState): Record<string, unknown> 
 /**
  * Row hash over the live item.
  *
- * Computed by CaptureLock over the merchant's values rather than accepted from
+ * Computed by TrueIntent over the merchant's values rather than accepted from
  * the merchant, so the merchant cannot supply a hash that hides a change.
  */
 export function liveItemRowHash(item: LiveItemState): Sha256Hex {

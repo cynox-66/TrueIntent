@@ -2,7 +2,7 @@
  * End-to-end scenarios, driven through the real service stack.
  *
  * Distinct from the 24-scenario harness in `scenarios.ts`, which compares a
- * naive agent against CaptureLock over an in-process world. These seven run the
+ * naive agent against TrueIntent over an in-process world. These seven run the
  * *same object graph the API builds* — same services, same guarded executor,
  * same unit of work — optionally against real Postgres. Their job is to show
  * that the lifecycle holds together end to end, including persistence,
@@ -113,7 +113,7 @@ export const E2E_SCENARIOS: readonly ScenarioDef[] = [
 
       await stack.simulatePayerAuthorization(order.releaseId!);
 
-      // The merchant's world moves. CaptureLock is told nothing; it finds out
+      // The merchant's world moves. TrueIntent is told nothing; it finds out
       // on its next live read, which is the whole point.
       stack.drift({ kind: 'SET_PRICE', sku: SKU_BLACK, unitPriceMinor: 549_900 });
       ctx.steps.push(`merchant raised the price to ${inr(549_900)}`);

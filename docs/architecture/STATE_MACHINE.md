@@ -1,4 +1,4 @@
-# CaptureLock state machines
+# TrueIntent state machines
 
 Rationale and the Razorpay findings that shaped this are in
 [ADR-005](../decisions/ADR-005-release-state-machine.md). This document is the

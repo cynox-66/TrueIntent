@@ -8,7 +8,7 @@
 
 Phase 0 described the TOCTOU defence like this: the merchant publishes a
 `row_hash` per catalogue row; the agent includes the `sourceRowHash` values it
-observed in its `CartSnapshot`; at capture CaptureLock re-reads the live rows and
+observed in its `CartSnapshot`; at capture TrueIntent re-reads the live rows and
 refuses if any hash differs.
 
 That defends against an _honest_ agent holding stale data. It does not defend
@@ -46,7 +46,7 @@ Row hashes still exist, computed by us over the merchant's values rather than
 accepted from the merchant. Their job is _drift attribution_ in the evidence —
 showing an operator what changed — never gating.
 
-### 3. CaptureLock issues the snapshot, not the agent
+### 3. TrueIntent issues the snapshot, not the agent
 
 The agent proposes SKUs, quantities and a destination. The server reads live
 state, prices every line from that read, takes the merchant's own fee quote,
@@ -57,8 +57,8 @@ charged.**
 ### 4. Two gates, two live reads
 
 The kernel runs at order creation and again at capture, each time against a fresh
-read. That second read is where the product earns its name: an order approved a
-minute ago is refused now if the world moved.
+read. That second read is the one that matters: an order approved a minute ago
+is refused now if the world moved.
 
 ### 5. An unreadable merchant refuses
 
@@ -82,4 +82,4 @@ traded for correctness, deliberately.
 would read a merchant's authoritative store or call a signed probe endpoint, and
 would have to reason about _its own_ staleness. Nothing here proves a real
 merchant feed is fresh — it proves that when the feed reports a change,
-CaptureLock refuses.
+TrueIntent refuses.

@@ -16,9 +16,9 @@ export interface Metrics {
   readonly adversarial: number;
   /** Baseline moved money on a scenario where it should not have. */
   readonly baselineUnsafeCharges: number;
-  /** CaptureLock moved money on a scenario where it should not have. Must be 0. */
+  /** TrueIntent moved money on a scenario where it should not have. Must be 0. */
   readonly gatedUnsafeCharges: number;
-  /** Nominal scenarios CaptureLock wrongly refused. */
+  /** Nominal scenarios TrueIntent wrongly refused. */
   readonly falseRefusals: number;
   readonly baselineTotalCaptures: number;
   readonly gatedTotalCaptures: number;
@@ -58,7 +58,7 @@ function rupees(minor: number): string {
 export function renderMarkdown(results: readonly ScenarioResult[], metrics: Metrics): string {
   const lines: string[] = [];
 
-  lines.push('# CaptureLock evaluation report');
+  lines.push('# TrueIntent evaluation report');
   lines.push('');
   lines.push(
     "_Results of this repository's own committed scenario suite. They show whether the system",
@@ -72,7 +72,7 @@ export function renderMarkdown(results: readonly ScenarioResult[], metrics: Metr
 
   lines.push('## Summary');
   lines.push('');
-  lines.push('| Metric | Baseline (no verification) | CaptureLock |');
+  lines.push('| Metric | Baseline (no verification) | TrueIntent |');
   lines.push('| --- | --- | --- |');
   lines.push(
     `| Unsafe charges (money moved that should not have) | ${metrics.baselineUnsafeCharges} | ${metrics.gatedUnsafeCharges} |`,
@@ -95,7 +95,7 @@ export function renderMarkdown(results: readonly ScenarioResult[], metrics: Metr
   );
   lines.push('');
   lines.push(
-    `Nominal scenarios wrongly refused by CaptureLock: **${metrics.falseRefusals} of ${metrics.nominal}**.`,
+    `Nominal scenarios wrongly refused by TrueIntent: **${metrics.falseRefusals} of ${metrics.nominal}**.`,
   );
   lines.push(
     `Scenarios matching their declared expectation: **${metrics.scenariosAsExpected} of ${metrics.total}**.`,
@@ -104,7 +104,7 @@ export function renderMarkdown(results: readonly ScenarioResult[], metrics: Metr
 
   lines.push('## Per-scenario results');
   lines.push('');
-  lines.push('| Scenario | Family | Baseline | CaptureLock | Reason codes |');
+  lines.push('| Scenario | Family | Baseline | TrueIntent | Reason codes |');
   lines.push('| --- | --- | --- | --- | --- |');
   for (const result of results) {
     const baseline = result.baseline.moneyMoved
@@ -233,7 +233,7 @@ export function renderAgentMarkdown(
 ): string {
   const lines: string[] = [];
 
-  lines.push('# CaptureLock agentic evaluation report');
+  lines.push('# TrueIntent agentic evaluation report');
   lines.push('');
   lines.push(
     'A bounded buyer agent shopping inside a delegated commerce session. Every',

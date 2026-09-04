@@ -1,5 +1,5 @@
 /**
- * Runs every scenario twice: once with no verification, once through CaptureLock.
+ * Runs every scenario twice: once with no verification, once through TrueIntent.
  *
  * The baseline is not a straw man. It is what an agent framework with a payment
  * tool does today: the agent decides, and the tool executes. It uses the same
@@ -133,12 +133,12 @@ export interface ScenarioResult {
   readonly scenario: Scenario;
   readonly baseline: SideResult;
   readonly capturelock: SideResult;
-  /** Did CaptureLock behave as the scenario declares it should? */
+  /** Did TrueIntent behave as the scenario declares it should? */
   readonly asExpected: boolean;
   readonly mismatch: string | null;
   /** The baseline moved money the user never authorized. */
   readonly baselineUnsafeCharge: boolean;
-  /** CaptureLock let an unsafe charge through. Must always be false. */
+  /** TrueIntent let an unsafe charge through. Must always be false. */
   readonly gatedUnsafeCharge: boolean;
   readonly evidenceChainValid: boolean;
   readonly decisionReplayed: boolean;
@@ -302,7 +302,7 @@ async function charge(
   };
 }
 
-/** The same world, run through CaptureLock. */
+/** The same world, run through TrueIntent. */
 async function runCaptureLock(
   scenario: Scenario,
 ): Promise<{ result: SideResult; chainValid: boolean; replayed: boolean }> {

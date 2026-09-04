@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "CaptureLock Operator Console",
+  "description": "TrueIntent Operator Console",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

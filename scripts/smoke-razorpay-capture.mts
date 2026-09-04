@@ -152,7 +152,7 @@ async function main(): Promise<void> {
   // assumed from the raw responses.
   const adapter = new RazorpayTestClient(config);
 
-  heading('CaptureLock — live Razorpay capture verification (TEST MODE)');
+  heading('TrueIntent — live Razorpay capture verification (TEST MODE)');
   show('key', `${keyId.slice(0, 12)}…`);
 
   // ---- 1. an order that must be captured manually --------------------------
@@ -356,7 +356,7 @@ function printHumanStep(keyId: string, orderId: string, amountMinor: number): vo
 function buildCheckoutPage(keyId: string, orderId: string, amountMinor: number): string {
   return `<!doctype html>
 <meta charset="utf-8">
-<title>CaptureLock — live capture verification</title>
+<title>TrueIntent — live capture verification</title>
 <style>
   body { font: 15px/1.6 system-ui, sans-serif; max-width: 34rem; margin: 4rem auto; padding: 0 1.5rem; }
   code { background: #f4f4f5; padding: .15em .4em; border-radius: 4px; }
@@ -382,7 +382,7 @@ function buildCheckoutPage(keyId: string, orderId: string, amountMinor: number):
     new Razorpay({
       key: ${JSON.stringify(keyId)},
       order_id: ${JSON.stringify(orderId)},
-      name: 'CaptureLock',
+      name: 'TrueIntent',
       description: 'Live capture verification (test mode)',
       handler: function (r) {
         document.getElementById('out').textContent =

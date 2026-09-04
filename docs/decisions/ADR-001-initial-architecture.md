@@ -5,6 +5,11 @@
 - **Author**: CaptureLock Engineering Team
 - **Target Milestone**: Razorpay AI Buildathon 2026 (Track 1)
 
+> The project was named CaptureLock when this and the following ADRs were
+> written, and is now branded TrueIntent. The author line above is left as
+> recorded. Package scopes, HTTP headers, hash domains and database identifiers
+> still carry the original spelling.
+
 ---
 
 ## 1. Context & Problem Statement
@@ -23,7 +28,7 @@ Without this primitive, transactions suffer from:
 4. **Duplicate charges** from webhook replays or agent retry storms.
 5. **A lack of replayable evidence** for post-transaction dispute resolution.
 
-CaptureLock is designed as an infrastructure-grade capture-time verifier that sits between buyer agents and payment gateways (demonstrated using Razorpay Test Mode).
+TrueIntent is designed as an infrastructure-grade capture-time verifier that sits between buyer agents and payment gateways (demonstrated using Razorpay Test Mode).
 
 ---
 

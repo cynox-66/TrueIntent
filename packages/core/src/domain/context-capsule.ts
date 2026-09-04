@@ -1,7 +1,7 @@
 /**
  * The context capsule: why a payment was attempted.
  *
- * CaptureLock's evidence already answers "what did the system decide, and from
+ * TrueIntent's evidence already answers "what did the system decide, and from
  * what inputs?" exactly — the kernel is pure, so a decision replays. What it
  * cannot answer is the question a human actually asks after an agent spends
  * their money: *why did it think I wanted this?* The capsule is the missing

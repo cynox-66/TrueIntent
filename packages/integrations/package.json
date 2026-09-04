@@ -2,7 +2,7 @@
   "name": "@capturelock/integrations",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock External Integrations and Provider Adapters (TEST MODE ONLY)",
+  "description": "TrueIntent External Integrations and Provider Adapters (TEST MODE ONLY)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

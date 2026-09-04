@@ -1,4 +1,4 @@
-# CaptureLock security model
+# TrueIntent security model
 
 ## 1. The invariants
 
@@ -166,7 +166,7 @@ than one that does not exist.
 - **A head witness only helps if the client kept it.** Truncation of the whole
   chain is undetectable without an independently held head.
 - **Freshness is only as good as the live read.** The provider is a deterministic
-  fake; a real feed could itself be stale, and CaptureLock would verify against
+  fake; a real feed could itself be stale, and TrueIntent would verify against
   the stale value faithfully.
 - **Normalization error is not detectable.** Constraints that do not match what
   the user meant will be enforced correctly and wrongly.

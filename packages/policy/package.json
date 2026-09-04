@@ -2,7 +2,7 @@
   "name": "@capturelock/policy",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock Policy Contracts, Schemas, and Compiler Interfaces",
+  "description": "TrueIntent Policy Contracts, Schemas, and Compiler Interfaces",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

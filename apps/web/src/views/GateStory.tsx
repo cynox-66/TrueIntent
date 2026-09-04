@@ -1,11 +1,11 @@
 /**
  * The two gates, side by side, and what moved between them.
  *
- * This is the one screen that has to make CaptureLock's central property
+ * This is the one screen that has to make TrueIntent's central property
  * legible without commentary:
  *
  *   the purchase was allowed earlier · the world changed ·
- *   the same purchase was re-evaluated · CaptureLock refused to move money
+ *   the same purchase was re-evaluated · TrueIntent refused to move money
  *
  * Everything rendered here is already in the API's response. Nothing is
  * recomputed, nothing is inferred, and no verdict is decided in the browser:
@@ -197,8 +197,8 @@ function Headline({
         glyph="⛔"
         title={
           capture.verdict === 'DENY'
-            ? 'CAPTURELOCK REFUSED TO MOVE MONEY'
-            : 'CAPTURELOCK STOPPED SHORT OF MOVING MONEY'
+            ? 'TRUEINTENT REFUSED TO MOVE MONEY'
+            : 'TRUEINTENT STOPPED SHORT OF MOVING MONEY'
         }
       >
         {money} passed the order gate{gap === null ? '' : ` ${gap} earlier`}, and was re-verified

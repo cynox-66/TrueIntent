@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "========================================"
-echo "CaptureLock Environment Verification"
+echo "TrueIntent Environment Verification"
 echo "========================================"
 
 # Node version check

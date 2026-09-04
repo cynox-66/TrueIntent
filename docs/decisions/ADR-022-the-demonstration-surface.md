@@ -61,7 +61,7 @@ disagreed, the server is right and the screen shows it.
 
 A 422 carrying reason codes is the most interesting thing this system produces.
 The API client returns those bodies instead of throwing, because routing them
-into a `catch` would make "CaptureLock said no" render like "something broke" —
+into a `catch` would make "TrueIntent said no" render like "something broke" —
 collapsing the distinction the whole product exists to draw.
 
 The first version discarded the parsed body and rebuilt the result from the

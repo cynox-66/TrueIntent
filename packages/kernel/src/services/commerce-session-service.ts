@@ -128,7 +128,7 @@ export interface PurchaseAccepted {
   readonly authorizationId: AuthorizationId;
   readonly snapshotId: string;
   readonly capsuleHash: Sha256Hex;
-  /** CaptureLock's answer, verbatim. This service does not interpret it. */
+  /** TrueIntent's answer, verbatim. This service does not interpret it. */
   readonly outcome: ReleaseOutcome;
   /** True when this request was answered from an existing purchase. */
   readonly replayedPurchase: boolean;
@@ -137,7 +137,7 @@ export interface PurchaseAccepted {
 /**
  * A refusal that happened before any mandate existed.
  *
- * Distinct from a CaptureLock verdict on purpose: nothing was verified, no
+ * Distinct from a TrueIntent verdict on purpose: nothing was verified, no
  * release was created, and no evidence chain was started, because the request
  * never got far enough to deserve one.
  */
@@ -381,7 +381,7 @@ export class CommerceSessionService {
         }
 
         // Appended before the gates, so the chain reads in causal order: what
-        // the agent was trying to buy and why, and only then what CaptureLock
+        // the agent was trying to buy and why, and only then what TrueIntent
         // decided about it.
         await repos.evidence.append({
           chainId: authorizationId,
@@ -406,7 +406,7 @@ export class CommerceSessionService {
       throw error;
     }
 
-    // Hand over to CaptureLock. From here the answer is entirely the kernel's.
+    // Hand over to TrueIntent. From here the answer is entirely the kernel's.
     const outcome = await this.releases.requestOrderCreation({
       authorizationId,
       snapshotId: asSnapshotId(snapshot.snapshotId),

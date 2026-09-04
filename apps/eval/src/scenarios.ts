@@ -2,7 +2,7 @@
  * The committed scenario suite.
  *
  * Every scenario is data: a world, an optional change to that world between
- * quote and capture, what the agent attempts, and what CaptureLock is expected
+ * quote and capture, what the agent attempts, and what TrueIntent is expected
  * to do about it. Both the unmediated baseline and the gated path run against
  * the identical world, so the comparison is like for like.
  *

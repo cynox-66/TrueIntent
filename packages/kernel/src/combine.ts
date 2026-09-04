@@ -1,7 +1,7 @@
 /**
  * The verdict combiner.
  *
- * This is the only place in CaptureLock where the word ALLOW is produced, and
+ * This is the only place in TrueIntent where the word ALLOW is produced, and
  * it is deliberately small enough to read in one sitting.
  *
  * The rule is default-deny by construction. ALLOW is not the absence of a

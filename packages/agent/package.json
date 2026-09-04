@@ -2,7 +2,7 @@
   "name": "@capturelock/agent",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock Bounded Buyer Agent Runtime and Model Port",
+  "description": "TrueIntent Bounded Buyer Agent Runtime and Model Port",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

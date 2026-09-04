@@ -7,7 +7,7 @@
 
 ## Context
 
-CaptureLock's verification kernel was complete and its only consumer was an HTTP
+TrueIntent's verification kernel was complete and its only consumer was an HTTP
 client. Nothing above it demonstrated an autonomous buyer agent, and the gap was
 not cosmetic: an `AuthorizedIntent` bounds **one** purchase and is consumed by
 the release that spends it (`ACTIVE → CONSUMED`, one active release per
@@ -146,7 +146,7 @@ something a test stages by hand.
 
 Appended as an `AGENT_CONTEXT` envelope on the authorization's own chain, before
 the order gate, so a chain reads in causal order: what the agent was trying to
-buy and why, and only then what CaptureLock decided about it.
+buy and why, and only then what TrueIntent decided about it.
 
 What it excludes is as considered as what it holds. **No conversation** — a model
 transcript in an append-only ledger is a privacy liability that grows without
@@ -164,7 +164,7 @@ and report tampering where there was none.
 
 `BuyerModel` is a two-method port. The default is a deterministic planner — no
 network, no dependency, and predictable enough that a scenario using it is
-evidence about CaptureLock rather than about a model. An opt-in Anthropic adapter
+evidence about TrueIntent rather than about a model. An opt-in Anthropic adapter
 implements the same interface in under a hundred lines of `fetch` with no SDK.
 
 Its output goes through the same `parseAgentAction`, and every action it proposes

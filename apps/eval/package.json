@@ -2,7 +2,7 @@
   "name": "@capturelock/eval",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock adversarial evaluation harness: baseline versus gated execution",
+  "description": "TrueIntent adversarial evaluation harness: baseline versus gated execution",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {

@@ -19,7 +19,7 @@ export const RazorpayConfigSchema = z
       .string()
       .min(TEST_KEY_PREFIX.length + 1)
       .refine(value => !value.startsWith(LIVE_KEY_PREFIX), {
-        message: 'Refusing a live-mode Razorpay key. CaptureLock is test mode only.',
+        message: 'Refusing a live-mode Razorpay key. TrueIntent is test mode only.',
       })
       .refine(value => value.startsWith(TEST_KEY_PREFIX), {
         message: `Razorpay key id must begin with ${TEST_KEY_PREFIX}`,
@@ -36,7 +36,7 @@ export type RazorpayConfig = z.infer<typeof RazorpayConfigSchema>;
 export class LiveModeRefusedError extends Error {
   constructor(prefix: string) {
     super(
-      `Refusing to construct a Razorpay client with a "${prefix}" key. CaptureLock is test mode only.`,
+      `Refusing to construct a Razorpay client with a "${prefix}" key. TrueIntent is test mode only.`,
     );
     this.name = 'LiveModeRefusedError';
   }

@@ -1,6 +1,6 @@
 # Adversarial Test Suite (Reserved for Phase 3)
 
-This directory is designated for adversarial evaluation scenarios proving that CaptureLock deterministically prevents unauthorized money execution.
+This directory is designated for adversarial evaluation scenarios proving that TrueIntent deterministically prevents unauthorized money execution.
 
 Planned test scenarios:
 

@@ -2,7 +2,7 @@
   "name": "@capturelock/api",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock API Service",
+  "description": "TrueIntent API Service",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {

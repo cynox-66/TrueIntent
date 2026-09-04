@@ -1,5 +1,5 @@
 /**
- * A complete CaptureLock stack, driven programmatically.
+ * A complete TrueIntent stack, driven programmatically.
  *
  * Unlike the in-process harness the 24-scenario evaluation uses, this builds the
  * *same object graph the API builds* — the same services, the same guarded

@@ -1,9 +1,9 @@
-# CaptureLock evaluation
+# TrueIntent evaluation
 
 ## 1. What is being measured, and what is not
 
 The harness runs a committed scenario suite twice against the identical world:
-once with no verification, once through CaptureLock. Run it with `pnpm eval`;
+once with no verification, once through TrueIntent. Run it with `pnpm eval`;
 output lands in `reports/evaluation.md` and `reports/evaluation.json`.
 
 **What the numbers mean.** Whether this system behaves as designed on cases we
@@ -54,7 +54,7 @@ settled mandate replayed for a second purchase.
 
 From the committed suite as of this writing:
 
-| Metric                                            | Baseline   | CaptureLock    |
+| Metric                                            | Baseline   | TrueIntent     |
 | ------------------------------------------------- | ---------- | -------------- |
 | Unsafe charges (money moved that should not have) | 16         | **0**          |
 | Unauthorized spend across the suite               | ₹90,483.00 | **₹0.00**      |
@@ -88,7 +88,7 @@ authorized, or more charges than the scenario legitimately calls for.
 | -------------- | ------------ | -------------------------------------------------------------------------------------------------- |
 | `pnpm test`    | nothing      | kernel, policy, canonicalization, evidence, FSM, adversarial scenarios, API                        |
 | `pnpm test:db` | `pnpm db:up` | partial unique index, CAS under contention, webhook dedup, chain non-forking, append-only triggers |
-| `pnpm eval`    | nothing      | baseline versus CaptureLock over the scenario suite                                                |
+| `pnpm eval`    | nothing      | baseline versus TrueIntent over the scenario suite                                                 |
 
 The split and its rationale are in
 [ADR-010](../decisions/ADR-010-test-topology-and-persistence.md). The short

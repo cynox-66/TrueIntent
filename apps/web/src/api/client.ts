@@ -129,7 +129,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
     // Deliberately does not echo the request: a network error message can end
     // up in a screenshot.
-    throw new NetworkError('Could not reach the CaptureLock API.');
+    throw new NetworkError('Could not reach the TrueIntent API.');
   }
 
   const text = await response.text();
@@ -164,7 +164,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
  *
  * A refusal is the most interesting answer this product gives, and it arrives
  * as a 422 carrying reason codes. Treating it as an exception would push the
- * story into a catch block and make "CaptureLock said no" look like "something
+ * story into a catch block and make "TrueIntent said no" look like "something
  * broke" — which is exactly the distinction the UI exists to draw. Every other
  * status still throws.
  */
@@ -274,10 +274,10 @@ export const api = {
   },
 
   /**
-   * Moves the merchant's world, not CaptureLock's copy of it.
+   * Moves the merchant's world, not TrueIntent's copy of it.
    *
    * This is what makes the drift scenario a real one: the restaurant changes
-   * its price, nothing in CaptureLock is touched, and the capture gate finds
+   * its price, nothing in TrueIntent is touched, and the capture gate finds
    * out on its next live read.
    */
   setCatalogPrice(sku: string, unitPriceMinor: number): Promise<unknown> {
@@ -310,7 +310,7 @@ export const api = {
   },
 
   /**
-   * Asks CaptureLock to verify a purchase.
+   * Asks TrueIntent to verify a purchase.
    *
    * Note what the body cannot carry: no amount, no currency, no total, no
    * verdict. The server derives every one of those. A 422 here is a refusal,

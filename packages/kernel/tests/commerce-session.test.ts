@@ -3,7 +3,7 @@
  *
  * This is where the Phase 5 claims stop being architecture and become
  * observable. Each of these runs the genuine two-gate pipeline against a
- * genuine (fake) provider, and counts provider calls — because "CaptureLock
+ * genuine (fake) provider, and counts provider calls — because "TrueIntent
  * refused" and "no money moved" are different statements, and only the second
  * one matters.
  *
@@ -753,7 +753,7 @@ describe('the stranded-hold sweep', () => {
 });
 
 describe('evidence', () => {
-  it('links the agentic context to the CaptureLock decision, in causal order', async () => {
+  it('links the agentic context to the TrueIntent decision, in causal order', async () => {
     const sessionId = await h.createSession();
     const purchase = await h.service.requestPurchase(
       h.purchase(sessionId, [{ sku: CURRY, quantity: 1 }]),
@@ -764,7 +764,7 @@ describe('evidence', () => {
     const kinds = chain.map(envelope => envelope.kind);
 
     // The agentic context comes first: what the agent was trying to buy, and
-    // only then what CaptureLock decided about it.
+    // only then what TrueIntent decided about it.
     expect(kinds[0]).toBe('AGENT_CONTEXT');
     expect(kinds).toContain('DECISION');
 

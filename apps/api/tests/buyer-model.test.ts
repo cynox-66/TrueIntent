@@ -62,7 +62,7 @@ describe('selecting the buyer model', () => {
 
   it('honours an explicit request for the planner even when a key exists', async () => {
     // The offline suites and the scenario engine depend on this: a scenario is
-    // evidence about CaptureLock only if the agent is predictable.
+    // evidence about TrueIntent only if the agent is predictable.
     const selected = selectBuyerModel(
       { ...BASE, buyerModel: 'deterministic', anthropicApiKey: 'sk-ant-not-a-real-key' },
       fakeAnthropic,

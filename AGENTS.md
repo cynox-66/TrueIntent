@@ -1,17 +1,17 @@
 # AGENTS.md - Operational Guardrails for AI Coding Agents
 
-This document defines the strict, non-negotiable operating principles and guidelines for any AI coding agent working in the **CaptureLock** repository.
+This document defines the strict, non-negotiable operating principles and guidelines for any AI coding agent working in the **TrueIntent** repository.
 
 ---
 
 ## Core Mission & Architectural Role
 
-CaptureLock is a **capture-time payment execution verification layer** for agentic commerce, designed for the Razorpay AI Buildathon 2026 (Track 1: AI Growth & Agentic Commerce).
+TrueIntent is a **capture-time payment execution verification layer** for agentic commerce, designed for the Razorpay AI Buildathon 2026 (Track 1: AI Growth & Agentic Commerce).
 
 It sits at the boundary between an AI buyer agent and payment rails:
 
 ```
-USER INTENT → BUYER AGENT → CAPTURELOCK → RAZORPAY (TEST MODE ONLY)
+USER INTENT → BUYER AGENT → TRUEINTENT → RAZORPAY (TEST MODE ONLY)
 ```
 
 The core thesis is:
@@ -48,7 +48,7 @@ Every agent operating in this repository must strictly adhere to the following r
 8. **Prefer explicit state machines over implicit behavior.**  
    State transitions (e.g. `PENDING → VERIFIED → CAPTURED / FAILED`) must be modeled with explicit, finite state machines and atomic persistence.
 
-9. **Do not bypass CaptureLock in demos/tests merely to make something pass.**  
+9. **Do not bypass TrueIntent in demos/tests merely to make something pass.**  
    If a test or demo scenario fails, diagnose the underlying rule, state mismatch, or race condition. Never disable validation middleware or hardcode approvals.
 
 10. **Do not add unnecessary dependencies.**  
@@ -58,7 +58,7 @@ Every agent operating in this repository must strictly adhere to the following r
     Any structural change, new component, or protocol adjustment must be recorded in `docs/decisions/` as an Architecture Decision Record (ADR).
 
 12. **Do not claim production-grade security from a prototype.**  
-    CaptureLock is an engineering-heavy prototype and research proof-of-concept. Be precise and honest about security assumptions and prototype boundaries.
+    TrueIntent is an engineering-heavy prototype and research proof-of-concept. Be precise and honest about security assumptions and prototype boundaries.
 
 13. **Every external integration should have a mock/fake implementation for deterministic tests.**  
     Tests must never depend on live external networks. Provide deterministic in-memory fakes for Razorpay APIs and merchant catalog feeds.
@@ -88,7 +88,7 @@ Every agent operating in this repository must strictly adhere to the following r
 - **Phase 0 (complete)**: Environment bootstrap, project structure, tooling, documentation skeleton.
 - **Phase 1 (complete)**: The verification kernel. Deterministic pipeline, policy engine,
   release state machine, capture-time freshness, two-layer idempotency, signed evidence ledger,
-  Razorpay test-mode adapter boundary, HTTP surface, and the baseline-versus-CaptureLock harness.
+  Razorpay test-mode adapter boundary, HTTP surface, and the baseline-versus-TrueIntent harness.
 - **Phase 2 (complete)**: The real, persistent end-to-end flow. Postgres as the source of
   truth, a unit of work with explicit transaction boundaries, the grant enforced as a
   capability at the provider port, separated HTTP authority, request-scoped idempotency,

@@ -1,4 +1,4 @@
-# CaptureLock data model
+# TrueIntent data model
 
 The authoritative artefact is
 `packages/persistence/src/postgres/migrations/0001_init.sql`. This document
@@ -61,7 +61,7 @@ enforced ([ADR-004](../decisions/ADR-004-authorized-intent-and-untrusted-input.m
 ### `verified_snapshots`
 
 A **server-issued** priced quote. The cart, every unit price, the fee quote and
-the total are computed by CaptureLock from a live merchant read. The agent
+the total are computed by TrueIntent from a live merchant read. The agent
 proposes SKUs and quantities and receives an opaque id; it never states an amount
 it will be charged. `snapshot_hash` is `UNIQUE`, and `redeemed_by_release_id`
 means a quote can be paid for once

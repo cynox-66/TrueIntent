@@ -2,7 +2,7 @@
   "name": "@capturelock/persistence",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock persistence: schema, migrations, and repository implementations",
+  "description": "TrueIntent persistence: schema, migrations, and repository implementations",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

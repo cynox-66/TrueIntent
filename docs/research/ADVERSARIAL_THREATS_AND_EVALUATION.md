@@ -10,7 +10,7 @@ Autonomous shopping agents face adversarial interactions from multiple direction
 
 ### Behavioral Trajectory Guard
 
-CaptureLock models agent actions as a trajectory over time:
+TrueIntent models agent actions as a trajectory over time:
 
 - **Velocity Counters**: Per-session tracking of catalog queries, merchant transitions, cart mutations, and capture attempts.
 - **Circuit Breakers**: Implemented as a per-authorization attempt velocity guard
@@ -49,7 +49,7 @@ In distributed financial architectures, networks are inherently unreliable:
 - Payment gateway dispatches duplicate webhook events across multiple servers.
 
 ```
-CLIENT / AGENT                         CAPTURELOCK                         RAZORPAY
+CLIENT / AGENT                         TRUEINTENT                          RAZORPAY
       │                                     │                                  │
       │── POST /authorize_capture ─────────►│                                  │
       │   (idempotency_key = K1)            │── POST /orders (key = K1) ──────►│
@@ -81,7 +81,7 @@ Post-transaction disputes in agentic commerce require non-repudiation:
 - What was the exact user prompt at the time of authorization?
 - What were the merchant's exact catalog values when the payment moved?
 
-CaptureLock answers this via **hash-chained evidence envelopes**:
+TrueIntent answers this via **hash-chained evidence envelopes**:
 $$E_n = \text{Envelope}(S_n, H(E_{n-1}), \text{IntentSnapshot}, \text{CartSnapshot}, \text{LiveDigest}, \text{Verdict})$$
 $$H(E_n) = \text{SHA-256}(\text{CanonicalJSON}(E_n))$$
 

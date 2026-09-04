@@ -1,8 +1,8 @@
-# CaptureLock architecture
+# TrueIntent architecture
 
 ## 1. What this is
 
-CaptureLock is a deterministic verification boundary between an autonomous agent
+TrueIntent is a deterministic verification boundary between an autonomous agent
 and payment execution. It answers one question, at the moment money moves:
 
 > Does this transaction still match the user's authorized intent, the operator's
@@ -25,7 +25,7 @@ USER ──── goal ──────► SessionAuthority (bounded budget, s
 AGENT ─── proposes SKUs + quantities ───────────────┤
                                                     ▼
                                       ┌──────────────────────────┐
-                                      │   CaptureLock            │
+                                      │   TrueIntent             │
                                       │                          │
   live merchant read ────────────────►│  resolveContext()        │  all I/O here
                                       │        │                 │
@@ -146,8 +146,8 @@ where it cannot drift from what happened.
 | `CAPTURE`        | `POST /v1/releases/:id/capture` | **Yes**                                             |
 
 The kernel runs at both, each time against a **fresh live merchant read**. An
-order approved a minute ago is refused now if the price moved. That second run is
-where the product earns its name.
+order approved a minute ago is refused now if the price moved. That second run
+is the one that distinguishes this from an authorization-time check.
 
 ## 5. Packages
 
@@ -160,7 +160,7 @@ evidence      signed hash chain, replay verification.
 integrations  Razorpay adapter, deterministic fakes.
 persistence   Drizzle-free SQL schema, Postgres + in-memory repositories.
 apps/api      thin HTTP layer.
-apps/eval     baseline-versus-CaptureLock harness, agentic scenarios.
+apps/eval     baseline-versus-TrueIntent harness, agentic scenarios.
 ```
 
 `agent` sits deliberately outside the money path: it imports `core` and `zod`

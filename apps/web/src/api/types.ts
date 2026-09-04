@@ -267,7 +267,7 @@ export interface PurchaseRequestBody {
 }
 
 /**
- * CaptureLock's answer, or a refusal that never reached it.
+ * TrueIntent's answer, or a refusal that never reached it.
  *
  * The two are distinguishable: a refusal before a mandate existed carries
  * `error` and no verdict, while a gate decision carries a verdict and reason

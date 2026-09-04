@@ -274,7 +274,7 @@ describe('the executor bounds what it remembers without widening replay', () => 
 
 describe('an operator approval is bound, not a blanket waiver', () => {
   /**
-   * This is the one place in CaptureLock where a refusal becomes an approval,
+   * This is the one place in TrueIntent where a refusal becomes an approval,
    * so the boundaries matter more than the happy path.
    */
   const APPROVAL = {

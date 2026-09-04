@@ -1,8 +1,8 @@
-# CLAUDE.md - CaptureLock Project Guide
+# CLAUDE.md - TrueIntent Project Guide
 
 ## Overview
 
-CaptureLock is a capture-time payment execution verification layer for agentic commerce (Razorpay AI Buildathon 2026, Track 1).
+TrueIntent is a capture-time payment execution verification layer for agentic commerce (Razorpay AI Buildathon 2026, Track 1).
 
 ## Common Commands
 

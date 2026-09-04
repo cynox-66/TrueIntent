@@ -370,7 +370,7 @@ describe('the evaluation proof point', () => {
     expect(body['totalScenarios']).toBe(report.metrics['total']);
   });
 
-  it('reports zero unauthorized charges under CaptureLock, or the suite is lying', async () => {
+  it('reports zero unauthorized charges under TrueIntent, or the suite is lying', async () => {
     const response = await server.inject({ method: 'GET', url: '/v1/evaluation/summary' });
     const body = response.json() as Record<string, unknown>;
     if (body['available'] !== true) return;

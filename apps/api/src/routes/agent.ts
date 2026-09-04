@@ -9,7 +9,7 @@
  *   POST /v1/sessions/:id/revoke   issuer  — nor is taking it back
  *   GET  /v1/sessions/:id          principal, owner only
  *   POST /v1/sessions/:id/agent    principal — run the bounded agent
- *   POST /v1/sessions/:id/purchase principal — ask CaptureLock to verify
+ *   POST /v1/sessions/:id/purchase principal — ask TrueIntent to verify
  *   POST /v1/sessions/:id/capture  principal — ask it to capture
  *   GET  /v1/sessions/:id/purchases  principal, owner only
  *   GET  /v1/releases/:id/agent-context  operator — the console's read
@@ -390,7 +390,7 @@ export function registerAgentRoutes(server: FastifyInstance, app: Application): 
   });
 
   // ------------------------------------------------------------- purchase --
-  // The agent asks. CaptureLock decides. This route cannot approve anything:
+  // The agent asks. TrueIntent decides. This route cannot approve anything:
   // it hands the request to the commerce service, which derives a mandate and
   // runs the unchanged order gate.
   server.post('/v1/sessions/:id/purchase', async (request, reply) => {

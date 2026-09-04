@@ -1,7 +1,7 @@
 /**
  * Evidence envelopes and the hash chain that links them.
  *
- * An envelope answers one question after the fact: *what did CaptureLock know
+ * An envelope answers one question after the fact: *what did TrueIntent know
  * when it made this decision?* It therefore carries the full decision input,
  * not a summary — a summary cannot be re-evaluated, and a record you cannot
  * re-evaluate is a claim rather than a proof.
@@ -30,7 +30,7 @@ export const ENVELOPE_KINDS = [
    * What a buyer agent was trying to buy, and under what delegated authority.
    *
    * Appended before the order gate, so a chain reads in causal order: the
-   * intent and the cart first, then what CaptureLock decided about them. It
+   * intent and the cart first, then what TrueIntent decided about them. It
    * carries no serialized verification context, so the replay endpoint reports
    * `reproduced: false` for it rather than attempting a re-evaluation of
    * something that was never a decision.

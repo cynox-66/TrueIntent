@@ -62,7 +62,7 @@ const SCENARIOS: readonly {
     outcome: 'Payment captured',
     tone: 'safe',
     blurb:
-      'The agent finds a dinner inside your budget, CaptureLock verifies it twice — once when the order is placed, once again before the money moves — and the payment goes through.',
+      'The agent finds a dinner inside your budget, TrueIntent verifies it twice — once when the order is placed, once again before the money moves — and the payment goes through.',
   },
   {
     id: 'drift',
@@ -72,7 +72,7 @@ const SCENARIOS: readonly {
     outcome: 'Capture refused · ₹0 moved',
     tone: 'danger',
     blurb:
-      'Verified at ₹4,949 and authorized by Razorpay. The restaurant changes it to ₹5,499 before the money moves. CaptureLock re-reads the menu at the last instant and refuses.',
+      'Verified at ₹4,949 and authorized by Razorpay. The restaurant changes it to ₹5,499 before the money moves. TrueIntent re-reads the menu at the last instant and refuses.',
   },
   {
     id: 'overreach',
@@ -112,7 +112,7 @@ function EvaluationProof(): ReactNode {
 
       <div className="proof-rows">
         <div className="proof-row is-without">
-          <span className="proof-label">Without CaptureLock</span>
+          <span className="proof-label">Without TrueIntent</span>
           <span className="proof-figure">
             {formatMoney({
               currency: summary.currency,
@@ -126,7 +126,7 @@ function EvaluationProof(): ReactNode {
         </div>
 
         <div className="proof-row is-with">
-          <span className="proof-label">With CaptureLock</span>
+          <span className="proof-label">With TrueIntent</span>
           <span className="proof-figure">
             {formatMoney({ currency: summary.currency, amountMinor: 0 } as never)} moved
           </span>
@@ -175,7 +175,7 @@ export function AgentStart(): ReactNode {
         </h1>
         <p className="hero-lede">
           An agent is good at deciding <em>what</em> to buy. It should never be the thing that
-          decides <em>whether the payment may happen</em>. CaptureLock sits between them and
+          decides <em>whether the payment may happen</em>. TrueIntent sits between them and
           re-checks, at the instant money would move, that the purchase still matches what you
           delegated and what the merchant will actually honour.
         </p>
@@ -200,7 +200,7 @@ export function AgentStart(): ReactNode {
         </div>
 
         <div className="boundary-box boundary-lock">
-          <div className="boundary-role">CaptureLock</div>
+          <div className="boundary-role">TrueIntent</div>
           <ul className="boundary-list">
             <li>Checks your delegation</li>
             <li>Re-reads the merchant</li>
@@ -316,7 +316,7 @@ export function AgentStart(): ReactNode {
 
       <section className="landing-foot">
         <p>
-          Behind this is an operator console — the human control surface for anything CaptureLock
+          Behind this is an operator console — the human control surface for anything TrueIntent
           pauses.{' '}
           <a
             href="#/operator"

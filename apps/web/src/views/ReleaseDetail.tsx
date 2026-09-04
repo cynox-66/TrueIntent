@@ -1,5 +1,5 @@
 /**
- * One release: what the agent asked for, what CaptureLock decided, and what an
+ * One release: what the agent asked for, what TrueIntent decided, and what an
  * operator may now do about it.
  *
  * Two rules govern the actions.

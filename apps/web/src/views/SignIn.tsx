@@ -54,7 +54,7 @@ export function SignIn({
         <div className="page-title">
           <h1>Operator sign-in</h1>
           <p className="page-sub">
-            CaptureLock gates payment execution. Reviewing and reconciling releases requires
+            TrueIntent gates payment execution. Reviewing and reconciling releases requires
             operator authority.
           </p>
         </div>

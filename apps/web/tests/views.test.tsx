@@ -425,8 +425,8 @@ describe('the judge-facing proof points', () => {
     });
     render(<AgentStart />);
 
-    expect(await screen.findByText(/Without CaptureLock/i)).toBeInTheDocument();
-    expect(screen.getByText(/With CaptureLock/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Without TrueIntent/i)).toBeInTheDocument();
+    expect(screen.getByText(/With TrueIntent/i)).toBeInTheDocument();
     // The number, formatted from the reported minor units.
     expect(screen.getByText(/90,483/)).toBeInTheDocument();
     expect(screen.getByText(/16 unauthorized charges/i)).toBeInTheDocument();
@@ -451,7 +451,7 @@ describe('the judge-facing proof points', () => {
     render(<AgentStart />);
 
     await screen.findByText(/without giving it your money/i);
-    expect(screen.queryByText(/Without CaptureLock/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Without TrueIntent/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no report/i)).not.toBeInTheDocument();
   });
 
@@ -853,7 +853,7 @@ describe('the gate story', () => {
     });
     render(<ReleaseDetail releaseId="rel_denied" operator={OPERATOR} />);
 
-    expect(await screen.findByText(/CAPTURELOCK REFUSED TO MOVE MONEY/i)).toBeTruthy();
+    expect(await screen.findByText(/TRUEINTENT REFUSED TO MOVE MONEY/i)).toBeTruthy();
     // The temporal property, in words, with the amount that was at stake.
     expect(screen.getByText(/passed the order gate/i)).toBeTruthy();
     expect(screen.getByText(/never asked to capture/i)).toBeTruthy();
@@ -908,7 +908,7 @@ describe('the gate story', () => {
     await screen.findByText(/Two gates, one transaction/i);
     // Honest about the gate that has not happened rather than implying a pass.
     expect(screen.getByText(/capture gate has not run for this release yet/i)).toBeTruthy();
-    expect(screen.queryByText(/CAPTURELOCK REFUSED TO MOVE MONEY/i)).toBeNull();
+    expect(screen.queryByText(/TRUEINTENT REFUSED TO MOVE MONEY/i)).toBeNull();
   });
 
   it('says the refusal is the outcome, not an omission', async () => {

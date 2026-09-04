@@ -25,7 +25,7 @@ Razorpay's account-level setting.
 
 If that setting is auto-capture — a common default — a payment moves
 `created → captured` when the payer completes checkout and **never passes
-through `authorized`**. For CaptureLock that is not a tuning detail. The capture
+through `authorized`**. For TrueIntent that is not a tuning detail. The capture
 gate is the gate the product is named after, and it would have nothing left to
 gate: the provider would have moved the money before our second verification
 ran. The two-gate design would be intact in code and bypassed in practice.
@@ -128,7 +128,7 @@ order   order_TXpI1qz1g3l8oE      release rel_a547c6daab34449caff591d650a24883
 ### 5. `payment_capture: 0` genuinely produces an authorized payment
 
 This was the one that mattered, because parameter acceptance is not behaviour.
-Immediately after hosted checkout completed, and **before** CaptureLock's
+Immediately after hosted checkout completed, and **before** TrueIntent's
 capture gate ran:
 
 ```

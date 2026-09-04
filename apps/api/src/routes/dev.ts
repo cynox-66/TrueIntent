@@ -32,10 +32,10 @@ const SimulateBody = z.object({ releaseId: ReleaseIdSchema }).strict();
 /**
  * Catalogue mutations, for demonstrating drift between the two gates.
  *
- * This moves the *merchant's* world, not CaptureLock's view of it — exactly what
+ * This moves the *merchant's* world, not TrueIntent's view of it — exactly what
  * a real price change would do. Nothing here touches an authorization, a
  * snapshot, or a release; the whole point is that the transaction becomes
- * invalid because reality moved, and CaptureLock notices on its next live read.
+ * invalid because reality moved, and TrueIntent notices on its next live read.
  */
 const CatalogBody = z.discriminatedUnion('kind', [
   z
@@ -260,7 +260,7 @@ export function registerDevRoutes(server: FastifyInstance, app: Application): vo
    *
    * Used to demonstrate that a transaction approved at the order gate is
    * refused at the capture gate when reality changes underneath it. It mutates
-   * only the fake catalogue; CaptureLock learns about the change the same way
+   * only the fake catalogue; TrueIntent learns about the change the same way
    * it would learn about a real one, on its next live read.
    */
   server.post('/v1/dev/catalog', async (request, reply) => {
@@ -301,7 +301,7 @@ function registerCheckoutHelper(server: FastifyInstance, app: Application): void
 
     return reply.type('text/html').send(`<!doctype html>
 <meta charset="utf-8">
-<title>CaptureLock — live capture verification</title>
+<title>TrueIntent — live capture verification</title>
 <style>
   body { font: 15px/1.6 system-ui, sans-serif; max-width: 34rem; margin: 4rem auto; padding: 0 1.5rem; }
   code { background: #f4f4f5; padding: .15em .4em; border-radius: 4px; font-size: .9em; }
@@ -318,7 +318,7 @@ function registerCheckoutHelper(server: FastifyInstance, app: Application): void
   <dt>amount</dt><dd>INR ${rupees}</dd>
 </dl>
 <p>This order was created with <code>payment_capture: 0</code>, so paying it produces an
-   <strong>authorized</strong> payment that CaptureLock must then capture through its
+   <strong>authorized</strong> payment that TrueIntent must then capture through its
    capture gate.</p>
 <div class="warn">
   <strong>Razorpay TEST MODE — no real money moves.</strong><br>
@@ -335,7 +335,7 @@ function registerCheckoutHelper(server: FastifyInstance, app: Application): void
     new Razorpay({
       key: ${JSON.stringify(keyId)},
       order_id: ${JSON.stringify(release.providerOrderId)},
-      name: 'CaptureLock',
+      name: 'TrueIntent',
       description: 'Live capture verification (test mode)',
       // Open straight on the card form. The method list is the only screen in
       // Checkout that cannot be driven from the keyboard, which makes the

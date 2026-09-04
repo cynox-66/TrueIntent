@@ -335,7 +335,7 @@ describe('running the bounded agent', () => {
 });
 
 describe('the purchase path', () => {
-  it('runs the order gate and returns CaptureLock verdict', async () => {
+  it('runs the order gate and returns TrueIntent verdict', async () => {
     const created = await createSession();
     const response = await server.inject({
       method: 'POST',
@@ -601,7 +601,7 @@ describe('the capture path', () => {
       payload: { releaseId },
     });
 
-    // Reality changes at the merchant, not in CaptureLock's copy of it.
+    // Reality changes at the merchant, not in TrueIntent's copy of it.
     const drift = await server.inject({
       method: 'POST',
       url: '/v1/dev/catalog',

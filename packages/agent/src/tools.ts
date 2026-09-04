@@ -15,7 +15,7 @@
  *    server prices the cart from live merchant state and the agent has nothing
  *    to lie about. `REQUEST_PURCHASE` carries a reason string for evidence and
  *    nothing else.
- *  - **No action carries a verdict.** The agent asks CaptureLock to verify a
+ *  - **No action carries a verdict.** The agent asks TrueIntent to verify a
  *    purchase; it cannot state the outcome. There is no field for one.
  *
  * Every schema is `.strict()`, so an extra property is a validation failure
@@ -132,7 +132,7 @@ export const TOOL_DESCRIPTIONS: Readonly<Record<AgentActionKind, string>> = Obje
   REMOVE_ITEM: 'Remove a SKU from the draft cart.',
   INSPECT_CART: 'Review the current draft cart.',
   REQUEST_PURCHASE:
-    'Ask CaptureLock to verify and, if it permits, execute the purchase. You do not decide the outcome.',
+    'Ask TrueIntent to verify and, if it permits, execute the purchase. You do not decide the outcome.',
   ABANDON: 'Give up on this goal, stating why. Use this when the catalogue cannot satisfy it.',
 });
 

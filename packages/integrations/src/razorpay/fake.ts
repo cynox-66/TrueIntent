@@ -83,7 +83,7 @@ export class FakePaymentProvider implements PaymentProvider {
    * a database — which is exactly what happened, and the `UNIQUE` constraint on
    * `releases.provider_order_id` caught it. Being unrealistic here would have
    * meant every scenario after the first failing for a reason that has nothing
-   * to do with CaptureLock.
+   * to do with TrueIntent.
    */
   private readonly instance = randomUUID().replace(/-/g, '').slice(0, 8);
 

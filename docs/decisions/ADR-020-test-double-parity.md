@@ -7,7 +7,7 @@
 
 ## Context
 
-CaptureLock runs its fast suite against in-memory repositories and its
+TrueIntent runs its fast suite against in-memory repositories and its
 concurrency suite against Postgres. That split is deliberate and worth keeping:
 one gives a sub-second feedback loop with no Docker, the other proves the things
 only a database can prove.

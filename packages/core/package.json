@@ -2,7 +2,7 @@
   "name": "@capturelock/core",
   "version": "0.0.1",
   "private": true,
-  "description": "CaptureLock Core Domain Contracts and Types",
+  "description": "TrueIntent Core Domain Contracts and Types",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

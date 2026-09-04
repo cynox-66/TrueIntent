@@ -100,7 +100,7 @@ export class RazorpayTestClient implements PaymentProvider {
       // goes straight from `created` to `captured` when the payer completes
       // checkout, never passing through `authorized`.
       //
-      // For CaptureLock that is not a tuning detail, it is an architectural
+      // For TrueIntent that is not a tuning detail, it is an architectural
       // bypass: the capture gate would have nothing left to gate, because the
       // provider already moved the money before our second verification ran.
       // The entire two-gate design depends on the authorize→capture split, so

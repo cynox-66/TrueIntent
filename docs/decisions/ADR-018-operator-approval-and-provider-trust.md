@@ -97,10 +97,10 @@ never read at all.
 
 The capture gate later presents `release.providerPaymentId` to the provider with
 **this release's** amount, read off the grant. So a misrouted, duplicated or
-mis-serialized event would bind a payment CaptureLock never created an order
+mis-serialized event would bind a payment TrueIntent never created an order
 for. In the benign case the provider refuses on an amount mismatch and a
 perfectly good release becomes terminally `CAPTURE_REJECTED`; in the case where
-the amounts happen to agree, CaptureLock captures a payment belonging to
+the amounts happen to agree, TrueIntent captures a payment belonging to
 something else.
 
 This is squarely inside the stated threat model — "assume Razorpay behaves

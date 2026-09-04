@@ -1,5 +1,5 @@
 /**
- * End-to-end harness: a complete CaptureLock wired to in-memory stores, a
+ * End-to-end harness: a complete TrueIntent wired to in-memory stores, a
  * deterministic clock, a scripted merchant catalogue and the fake provider.
  *
  * Everything is real except the two edges. The kernel, the release service, the

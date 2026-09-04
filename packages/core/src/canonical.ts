@@ -3,7 +3,7 @@
  *
  * See docs/decisions/ADR-002-canonicalization-and-hashing.md for the rationale.
  *
- * This is the trust anchor for every hash CaptureLock produces: snapshot
+ * This is the trust anchor for every hash TrueIntent produces: snapshot
  * hashes, policy hashes, decision hashes, and the evidence chain. If two
  * logically identical structures could serialize differently, an attacker
  * could produce a colliding-yet-different payload, or a verifier could report

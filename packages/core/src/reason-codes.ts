@@ -1,5 +1,5 @@
 /**
- * The closed vocabulary of reasons CaptureLock can give for a decision.
+ * The closed vocabulary of reasons TrueIntent can give for a decision.
  *
  * A reason code is part of the public contract: it appears in API responses, in
  * evidence envelopes, and in the adversarial suite's expectations. Codes are
@@ -240,7 +240,7 @@ export const REASON_CODE_DEFINITIONS = {
   LIVE_STATE_UNAVAILABLE: def(
     'FRESHNESS',
     'DENY',
-    'Live merchant state could not be read; CaptureLock refuses rather than trusting a stale copy.',
+    'Live merchant state could not be read; TrueIntent refuses rather than trusting a stale copy.',
   ),
   LIVE_ITEM_NOT_FOUND: def('FRESHNESS', 'DENY', 'A cart SKU no longer exists in the live catalog.'),
   LIVE_PRICE_DIVERGED: def(

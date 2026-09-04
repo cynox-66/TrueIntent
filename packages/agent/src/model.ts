@@ -72,7 +72,7 @@ export interface BuyerModel {
  * inspect what came back, add the cheapest items that fit the delegated
  * categories until the goal is plausibly met, then ask for the purchase. It
  * cannot do anything clever, and that is deliberate — a scenario is only
- * evidence about CaptureLock if the agent's behaviour is predictable.
+ * evidence about TrueIntent if the agent's behaviour is predictable.
  *
  * `preferSku` exists so an adversarial scenario can make this agent behave
  * badly on purpose: point it at the energy drinks and it will dutifully build a

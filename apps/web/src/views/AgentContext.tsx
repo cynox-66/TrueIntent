@@ -1,7 +1,7 @@
 /**
  * The agentic context panel.
  *
- * The rest of this console answers "what did CaptureLock decide, and why?" from
+ * The rest of this console answers "what did TrueIntent decide, and why?" from
  * evidence that replays exactly. This panel answers the question an operator
  * asks first and the ledger could not previously address: *why did an agent
  * think the user wanted this?*

@@ -32,7 +32,7 @@ async function main(): Promise<void> {
 
   const databaseUrl = process.env['DATABASE_URL'];
   console.info(
-    `CaptureLock end-to-end scenarios  (persistence: ${databaseUrl === undefined ? 'in-memory' : 'postgres'})\n`,
+    `TrueIntent end-to-end scenarios  (persistence: ${databaseUrl === undefined ? 'in-memory' : 'postgres'})\n`,
   );
 
   let failed = 0;

@@ -1,9 +1,9 @@
-# CaptureLock
+# TrueIntent
 
 > **A capture-time payment verification boundary for agentic commerce.**
 > Built for the Razorpay AI Buildathon 2026 (Track 1).
 
-CaptureLock sits between an autonomous agent and payment execution and answers
+TrueIntent sits between an autonomous agent and payment execution and answers
 one question at the moment money moves:
 
 > Does this transaction still match the user's authorized intent, the operator's
@@ -39,26 +39,26 @@ between the two gates, and an agent that reaches past what it was delegated.
 The last two end in a refusal with **₹0 moved**, and the screen says which.
 
 Behind it, `/#/operator` is the human control surface — the queue of anything
-CaptureLock paused, and the evidence chain for anything it decided.
+TrueIntent paused, and the evidence chain for anything it decided.
 
 ## What it does
 
 A user delegates a **bounded commerce session** — a budget, a purpose, allowed
 merchants and categories, an expiry. A buyer agent then shops inside it: it
-searches the merchant catalogue, builds a cart, and asks CaptureLock to verify a
+searches the merchant catalogue, builds a cart, and asks TrueIntent to verify a
 purchase. It never holds the key that created the session, and there is no tool
 in its vocabulary for moving money.
 
 An agent proposes SKUs and quantities. It does **not** propose prices, its own
 budget, which policy applies, or what time it is — the request schemas have no
-field for any of those. CaptureLock reads live merchant state, prices the cart
+field for any of those. TrueIntent reads live merchant state, prices the cart
 itself, and issues an opaque quote. At release the agent can only point at that
 quote.
 
 Verification then runs **twice**: once when the payable order is created, and
-again at capture against a _fresh_ live merchant read. That second run is where
-the product earns its name — an order approved a minute ago is refused now if the
-price moved.
+again at capture against a _fresh_ live merchant read. That second run is the
+one that matters — an order approved a minute ago is refused now if the price
+moved.
 
 ```
                               ┌──────────────────────────┐
@@ -88,7 +88,7 @@ price moved.
 `pnpm eval` runs 24 committed scenarios twice — once unmediated, once gated —
 against the identical world:
 
-|                                      | Baseline (no verification) | CaptureLock    |
+|                                      | Baseline (no verification) | TrueIntent     |
 | ------------------------------------ | -------------------------- | -------------- |
 | Unsafe charges                       | 16                         | **0**          |
 | Unauthorized spend                   | ₹90,483.00                 | **₹0.00**      |
@@ -131,9 +131,9 @@ pnpm demo review    #   …the operator flow: paused, approved, re-verified
 pnpm demo happy     #   …verified at both gates, then captured
 
 pnpm scenario       # 9 end-to-end lifecycle scenarios
-pnpm eval           # baseline vs CaptureLock → reports/
+pnpm eval           # baseline vs TrueIntent → reports/
 
-pnpm test           # 695 offline + 51 console tests, no Docker
+pnpm test           # 708 offline + 56 console tests, no Docker
 pnpm test:db        # 112 tests against real Postgres, incl. 67 parity cases
 pnpm web            # operator console at :5173, proxying the API
 pnpm smoke:razorpay         # opt-in: live order semantics
@@ -163,7 +163,7 @@ demonstration:
    ALLOW → ORDER_CREATED, order order_fake_…
    moneyMoved: false — an order is not a charge
 
-5. The merchant raises the price. CaptureLock is told nothing.
+5. The merchant raises the price. TrueIntent is told nothing.
    INR 4799.00 → INR 5499.00 in the merchant's catalogue.
 
 6. Gate 2: the capture gate. The kernel runs again against a fresh live read.
@@ -221,6 +221,13 @@ principal (`x-capturelock-user` + `x-capturelock-session`) acts, an issuer
 (`x-capturelock-operator-key` + `x-capturelock-operator`) resolves reviews,
 forces reconciliation and reads the queue. An agent holds only the first.
 
+> [!NOTE]
+> The project was built as **CaptureLock** and is now **TrueIntent**. The rename
+> is a product one: header names, package scopes (`@capturelock/*`), hash domains
+> (`capturelock.v1.*`) and database identifiers keep the original spelling,
+> because changing a hash domain would invalidate every signed evidence chain
+> already committed to this repository.
+
 No endpoint moves money without passing the kernel. There is no override flag.
 `POST /v1/dev/*` exists only when the provider is the fake and the environment is
 not production.
@@ -236,7 +243,7 @@ packages/evidence      signed hash chain, replay verification
 packages/integrations  Razorpay adapter + deterministic fakes
 packages/persistence   SQL schema, Postgres and in-memory repositories
 apps/api               thin HTTP layer
-apps/eval              baseline-versus-CaptureLock harness + agentic scenarios
+apps/eval              baseline-versus-TrueIntent harness + agentic scenarios
 docs/decisions         ADR-001..022 — why, and what was rejected
 ```
 

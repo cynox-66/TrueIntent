@@ -174,7 +174,7 @@ async function upToPaymentAuthorized(label: string): Promise<Ids> {
   assert(auth.status === 201, `authorization failed: ${JSON.stringify(auth.body)}`);
   detail(`authorization ${auth.body.authorizationId}`);
 
-  say('The agent proposes SKUs. CaptureLock prices the cart from live merchant state.');
+  say('The agent proposes SKUs. TrueIntent prices the cart from live merchant state.');
   const quote = await call<{
     snapshotId: string;
     total: { amountMinor: number };
@@ -267,11 +267,11 @@ async function priceDrift(): Promise<void> {
   await setPrice(LIST_PRICE_MINOR);
   const ids = await upToPaymentAuthorized('drift');
 
-  say('The merchant raises the price. CaptureLock is told nothing.');
+  say('The merchant raises the price. TrueIntent is told nothing.');
   await setPrice(RAISED_PRICE_MINOR);
   detail(
     `${inr(LIST_PRICE_MINOR)} → ${inr(RAISED_PRICE_MINOR)} in the merchant's catalogue. ` +
-      'CaptureLock finds out on its next live read, which is the whole point.',
+      'TrueIntent finds out on its next live read, which is the whole point.',
   );
 
   say('Gate 2: the capture gate. The kernel runs again against a fresh live read.');
@@ -726,7 +726,7 @@ async function agentPurchase(): Promise<void> {
     'Note the cart carries SKUs and quantities. There is no price in it for the agent to lie about.',
   );
 
-  say('The agent asks CaptureLock to verify the purchase');
+  say('The agent asks TrueIntent to verify the purchase');
   const first = await requestPurchase(session.sessionId, cart, 'agent-buy', run);
   assert(first.status === 200, `the order gate refused: ${JSON.stringify(first.body)}`);
   verdict(GREEN, `GATE 1 (ORDER_CREATION): ${String(first.body.verdict)}`);
@@ -739,7 +739,7 @@ async function agentPurchase(): Promise<void> {
   await authorizePayer(releaseId);
   detail('A genuinely signed webhook, through the real webhook route.');
 
-  say('The agent asks CaptureLock to capture');
+  say('The agent asks TrueIntent to capture');
   const captured = await call<PurchaseView>(
     'POST',
     `/v1/sessions/${session.sessionId}/capture`,
@@ -785,7 +785,7 @@ async function agentPurchase(): Promise<void> {
   say('The merchant raises the price before the money moves');
   await setSkuPrice(CURRY_SKU, CURRY_RAISED_MINOR);
   detail(`${CURRY_SKU}: ${inr(CURRY_PRICE_MINOR)} -> ${inr(CURRY_RAISED_MINOR)}`);
-  detail('Nothing in CaptureLock changed. The world did.');
+  detail('Nothing in TrueIntent changed. The world did.');
 
   say('The agent tries to capture using what it learned a moment ago');
   const refusedCapture = await call<PurchaseView>(
@@ -1167,9 +1167,9 @@ async function agenticDemo(): Promise<void> {
   detail(
     `${inr(DINNER_UNIT_MINOR + SERVICE_MINOR)} → ${inr(DRIFTED_UNIT_MINOR + SERVICE_MINOR)} all-in`,
   );
-  detail('Nothing in CaptureLock changed. The world did.');
+  detail('Nothing in TrueIntent changed. The world did.');
 
-  say('The agent asks CaptureLock to capture');
+  say('The agent asks TrueIntent to capture');
   const refused = await call<AgenticPurchase>(
     'POST',
     `/v1/sessions/${session.sessionId}/capture`,
@@ -1297,7 +1297,7 @@ async function main(): Promise<void> {
   }
 
   const health = await call<{ paymentProvider: string }>('GET', '/health', {});
-  console.info(`${BOLD}CaptureLock — ${demo.title}${OFF}`);
+  console.info(`${BOLD}TrueIntent — ${demo.title}${OFF}`);
   console.info(
     `${DIM}${BASE} · payment provider: ${health.body.paymentProvider}` +
       `${health.body.paymentProvider === 'fake' ? ' (deterministic fake — no request reaches Razorpay)' : ''}${OFF}`,

@@ -87,7 +87,7 @@ const ConfigSchema = z
      * `deterministic` pins the planner regardless of what else is configured,
      * which is what the offline suites and the scenario engine want:
      * reproducible, no network, and predictable enough that a scenario is
-     * evidence about CaptureLock rather than about a model.
+     * evidence about TrueIntent rather than about a model.
      *
      * Selecting a model never changes what the model may do. Whichever one
      * runs reaches the same bounded tool vocabulary, and a missing key falls
@@ -146,8 +146,7 @@ const ConfigSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['razorpayKeyId'],
-          message:
-            'Refusing to start with a live-mode Razorpay key. CaptureLock is test mode only.',
+          message: 'Refusing to start with a live-mode Razorpay key. TrueIntent is test mode only.',
         });
       } else if (!config.razorpayKeyId.startsWith(TEST_KEY_PREFIX)) {
         ctx.addIssue({

@@ -46,7 +46,7 @@ async function main(): Promise<void> {
         paymentProvider: application.providerName,
         url: `http://${config.host}:${config.port}`,
       },
-      'CaptureLock API listening',
+      'TrueIntent API listening',
     );
   } catch (error) {
     server.log.error(error);

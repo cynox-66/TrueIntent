@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   try {
     if (reset) {
       await db.reset();
-      console.info('Dropped all CaptureLock tables.');
+      console.info('Dropped all TrueIntent tables.');
     }
     const result = await runMigrations(db, MIGRATIONS);
     for (const name of result.alreadyApplied) console.info(`  = ${name} (already applied)`);

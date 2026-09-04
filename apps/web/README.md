@@ -1,6 +1,6 @@
-# CaptureLock Operator Console
+# TrueIntent Operator Console
 
-The human half of the system. CaptureLock refuses to complete some releases on
+The human half of the system. TrueIntent refuses to complete some releases on
 its own — a paused one needs a decision, an indeterminate one needs the provider
 asked — and this is where that work happens.
 

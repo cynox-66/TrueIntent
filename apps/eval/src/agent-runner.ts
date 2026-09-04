@@ -267,7 +267,7 @@ export async function runAgentScenario(scenario: AgentScenario): Promise<AgentSc
   if (scenario.revokeSession) await world.service.revoke(sessionId);
 
   if (scenario.tamperWithBounds) {
-    // Raise the stored budget behind CaptureLock's back.
+    // Raise the stored budget behind TrueIntent's back.
     const stored = await world.sessions.findById(sessionId);
     world.sessions.rows.set(sessionId, {
       ...stored!,
@@ -335,7 +335,7 @@ export async function runAgentScenario(scenario: AgentScenario): Promise<AgentSc
     catalogVersion,
   });
 
-  // ---- ask CaptureLock ---------------------------------------------------
+  // ---- ask TrueIntent ---------------------------------------------------
   const attempts: AuthorizationId[] = [];
 
   if (scenario.behaviour.kind === 'BUY_CONCURRENTLY') {

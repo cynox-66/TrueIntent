@@ -19,7 +19,7 @@ export type Route =
   // ---- buyer-facing ----------------------------------------------------
   /** Start: express an intent and delegate a bounded session. */
   | { readonly name: 'agent' }
-  /** Live: what the agent is doing, and what CaptureLock made of it. */
+  /** Live: what the agent is doing, and what TrueIntent made of it. */
   | { readonly name: 'agent-session'; readonly sessionId: string }
   // ---- operator-facing -------------------------------------------------
   | { readonly name: 'queue' }

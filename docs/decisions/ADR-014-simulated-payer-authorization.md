@@ -48,7 +48,7 @@ is taken from Razorpay's published documentation and verified against the
 signature scheme; the surrounding integration is not exercised.
 
 Calling this an end-to-end test of Razorpay would be false. It is an end-to-end
-test of CaptureLock, with the provider replaced by a double that reproduces its
+test of TrueIntent, with the provider replaced by a double that reproduces its
 documented and (for orders) measured semantics.
 
 ## Alternatives rejected
