@@ -21,6 +21,9 @@
       "path": "../../packages/persistence"
     },
     {
+      "path": "../../packages/agent"
+    },
+    {
       "path": "../../packages/kernel"
     }
   ],

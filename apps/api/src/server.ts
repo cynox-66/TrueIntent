@@ -12,8 +12,7 @@
  * parameter.
  */
 
-import { timingSafeEqual } from 'node:crypto';
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { ZodError } from 'zod';
 import {
@@ -29,6 +28,8 @@ import { computeDecisionHash } from '@capturelock/core';
 import type { Application } from './composition.js';
 import { withIdempotency } from './http-idempotency.js';
 import { registerDevRoutes } from './routes/dev.js';
+import { registerAgentRoutes } from './routes/agent.js';
+import { forbidden, hasAuthority, principalOf, unauthenticated } from './auth.js';
 import type {
   EvidenceTimelineResponse,
   OperatorQueueItem,
@@ -81,34 +82,10 @@ export interface ServerOptions {
  *   principal  the acting user/session. Agents have this.
  *   issuer     may create authorizations. The trusted user-facing app.
  *   operator   may resolve reviews and force reconciliation. A human console.
+ *
+ * The implementations live in `./auth.ts`, shared with the agentic routes so
+ * there is one constant-time comparison in the codebase rather than two.
  */
-function hasAuthority(
-  request: FastifyRequest,
-  header: string,
-  expected: string | undefined,
-): boolean {
-  if (expected === undefined) return false;
-  const presented = request.headers[header];
-  if (typeof presented !== 'string') return false;
-  const a = Buffer.from(presented, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
-  // Constant-time, and length-checked first because timingSafeEqual throws on
-  // a mismatch — which would itself be a timing signal.
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function forbidden(reply: FastifyReply, authority: string, why: string): FastifyReply {
-  return reply
-    .status(403)
-    .send({ error: 'FORBIDDEN', message: `${authority} authority required: ${why}` });
-}
-
-function principalOf(request: FastifyRequest): { userId: string; sessionId: string } | null {
-  const userId = request.headers['x-capturelock-user'];
-  const sessionId = request.headers['x-capturelock-session'];
-  if (typeof userId !== 'string' || typeof sessionId !== 'string') return null;
-  return { userId, sessionId };
-}
 
 export async function buildServer(options: ServerOptions): Promise<FastifyInstance> {
   const app = options.app;
@@ -670,17 +647,15 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     return reply.send({ envelope, replay });
   });
 
+  // The agentic commerce surface. Its own module because the authority split —
+  // issuer to delegate, principal to shop and ask, operator to read the
+  // context — is the point, and belongs somewhere it can be read at a glance.
+  registerAgentRoutes(server, app);
+
   // Registered last so a development helper can never shadow a real route.
   registerDevRoutes(server, app);
 
   return server;
-}
-
-function unauthenticated(reply: FastifyReply): FastifyReply {
-  return reply.status(401).send({
-    error: 'UNAUTHENTICATED',
-    message: 'x-capturelock-user and x-capturelock-session headers are required.',
-  });
 }
 
 /**

@@ -73,6 +73,34 @@ const ConfigSchema = z
     providerLookupConsistencySeconds: z.coerce.number().int().min(0).max(3600).default(60),
     /** Background sweeper interval. Zero disables the sweepers entirely. */
     sweepIntervalSeconds: z.coerce.number().int().min(0).max(3600).default(30),
+
+    // ---- bounded buyer agent -------------------------------------------------
+    /**
+     * Which buyer model the agent runs on.
+     *
+     * `deterministic` by default, and deliberately so: the demo and every
+     * scenario must be reproducible, and no request should reach a network
+     * unless someone asked for it. Selecting `anthropic` without a key falls
+     * back rather than failing, because a missing model must never be a reason
+     * to skip a check — the worst case is an agent that cannot shop.
+     */
+    buyerModel: z.enum(['deterministic', 'anthropic']).default('deterministic'),
+    anthropicApiKey: z.string().min(1).optional(),
+    anthropicModel: z.string().min(1).max(128).default('claude-sonnet-5'),
+    /**
+     * The operator policy every commerce session binds its purchases to.
+     *
+     * Defaults to the seeded demo policy so a fresh checkout can run
+     * `pnpm demo agent` without configuration. A session refuses to be created
+     * if the policy is missing, rather than being created unconstrained.
+     */
+    agentPolicyId: z.string().min(1).max(64).default('household_default'),
+    agentPolicyVersion: z
+      .string()
+      .regex(/^\d+\.\d+\.\d+$/)
+      .default('1.0.0'),
+    /** How long a purchase budget hold may sit unresolved before the sweep acts. */
+    settleAfterSeconds: z.coerce.number().int().min(1).max(3600).default(120),
   })
   .strict()
   .transform(config => ({
@@ -177,5 +205,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     grantTtlSeconds: env['GRANT_TTL_SECONDS'],
     providerLookupConsistencySeconds: env['PROVIDER_LOOKUP_CONSISTENCY_SECONDS'],
     sweepIntervalSeconds: env['SWEEP_INTERVAL_SECONDS'],
+    buyerModel: env['BUYER_MODEL'],
+    anthropicApiKey: env['ANTHROPIC_API_KEY'],
+    anthropicModel: env['ANTHROPIC_MODEL'],
+    agentPolicyId: env['AGENT_POLICY_ID'],
+    agentPolicyVersion: env['AGENT_POLICY_VERSION'],
+    settleAfterSeconds: env['SETTLE_AFTER_SECONDS'],
   });
 }

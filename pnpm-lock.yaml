@@ -53,6 +53,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@capturelock/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@capturelock/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -111,6 +114,9 @@ importers:
 
   apps/eval:
     dependencies:
+      '@capturelock/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@capturelock/core':
         specifier: workspace:*
         version: link:../../packages/core

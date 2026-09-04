@@ -12,6 +12,7 @@
     "scenario": "tsx src/scenario-main.ts"
   },
   "dependencies": {
+    "@capturelock/agent": "workspace:*",
     "@capturelock/core": "workspace:*",
     "@capturelock/evidence": "workspace:*",
     "@capturelock/integrations": "workspace:*",

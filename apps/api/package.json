@@ -13,18 +13,19 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@capturelock/agent": "workspace:*",
     "@capturelock/core": "workspace:*",
     "@capturelock/evidence": "workspace:*",
     "@capturelock/integrations": "workspace:*",
+    "@capturelock/kernel": "workspace:*",
+    "@capturelock/persistence": "workspace:*",
     "@capturelock/policy": "workspace:*",
     "@fastify/cors": "^10.0.2",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.39.3",
     "fastify": "^5.2.1",
     "pg": "^8.13.3",
-    "zod": "^3.24.2",
-    "@capturelock/kernel": "workspace:*",
-    "@capturelock/persistence": "workspace:*"
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
