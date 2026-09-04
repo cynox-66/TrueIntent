@@ -179,6 +179,22 @@ importers:
         specifier: ^6.4.3
         version: 6.4.3(@types/node@22.20.1)(tsx@4.23.13)
 
+  packages/agent:
+    dependencies:
+      '@capturelock/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/core:
     dependencies:
       zod:

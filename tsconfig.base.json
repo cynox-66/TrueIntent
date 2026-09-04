@@ -31,6 +31,7 @@
       "@capturelock/policy": ["./packages/policy/src/index.ts"],
       "@capturelock/evidence": ["./packages/evidence/src/index.ts"],
       "@capturelock/integrations": ["./packages/integrations/src/index.ts"],
+      "@capturelock/agent": ["./packages/agent/src/index.ts"],
       "@capturelock/kernel": ["./packages/kernel/src/index.ts"],
       "@capturelock/persistence": ["./packages/persistence/src/index.ts"]
     }

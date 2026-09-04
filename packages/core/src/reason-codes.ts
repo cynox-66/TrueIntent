@@ -26,6 +26,8 @@ export type ReasonStage =
   | 'EXECUTION'
   | 'KERNEL'
   | 'ADVISORY'
+  | 'SESSION'
+  | 'AGENT'
   | 'INFORMATIONAL';
 
 interface ReasonDefinition {
@@ -343,6 +345,39 @@ export const REASON_CODE_DEFINITIONS = {
     'ADVISORY',
     'DENY',
     'The advisory reviewer judged the cart to have diverged from the stated intent.',
+  ),
+
+  // ------------------------------------------------------------------- session
+  SESSION_PURCHASE_NOT_PERMITTED: def(
+    'SESSION',
+    'DENY',
+    'The proposed purchase falls outside the bounds the user delegated to this session.',
+  ),
+
+  // --------------------------------------------------------------------- agent
+  //
+  // Failures of the buyer agent itself. An agent failure must never be able to
+  // become a payment success, so each of these terminates the request without
+  // reaching a gate.
+  INVALID_AGENT_ACTION: def(
+    'AGENT',
+    'DENY',
+    'The agent proposed an action that failed validation against its tool schema or the current session state.',
+  ),
+  AGENT_STEP_LIMIT_EXCEEDED: def(
+    'AGENT',
+    'DENY',
+    'The agent exhausted its step budget without reaching a purchase decision.',
+  ),
+  CART_NOT_GROUNDED: def(
+    'AGENT',
+    'DENY',
+    'A cart line names a SKU the merchant catalog does not currently offer, so nothing grounds it.',
+  ),
+  AGENT_MODEL_UNAVAILABLE: def(
+    'AGENT',
+    'DENY',
+    'The buyer model could not be reached. Refusing to shop is safe; guessing is not.',
   ),
 
   // ------------------------------------------------------------- informational

@@ -15,6 +15,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { REASON_CODES } from '@capturelock/core';
+import {
+  AGENT_ACTION_KINDS,
+  FORBIDDEN_TOOL_SUBSTRINGS,
+  parseAgentAction,
+} from '@capturelock/agent';
 
 // Vitest runs from the workspace root, which is where the packages live.
 const ROOT = process.cwd();
@@ -70,6 +75,72 @@ describe('the kernel is provider- and framework-agnostic', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+});
+
+describe('the buyer agent cannot reach the money path', () => {
+  const files = sourceFiles('packages/agent/src');
+
+  it('has source files to check', () => {
+    expect(files.length).toBeGreaterThan(3);
+  });
+
+  it('depends only on core, zod and Node built-ins', () => {
+    // Deliberately narrower than the kernel's allowance: no kernel, no
+    // persistence, no integrations. The agent runtime holds no repository and
+    // no provider, so the strongest thing it can produce is a request.
+    const allowed = /^(node:|\.|@capturelock\/core$|zod$)/;
+    const violations: string[] = [];
+    for (const file of files) {
+      for (const spec of importsOf(file)) {
+        if (!allowed.test(spec)) violations.push(`${relative(ROOT, file)} -> ${spec}`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it.each([
+    'fastify',
+    'pg',
+    'razorpay',
+    '@capturelock/kernel',
+    '@capturelock/persistence',
+    '@capturelock/integrations',
+  ])('never imports %s', forbidden => {
+    const offenders = files.filter(file =>
+      importsOf(file).some(spec => spec === forbidden || spec.startsWith(`${forbidden}/`)),
+    );
+    expect(offenders.map(f => relative(ROOT, f))).toEqual([]);
+  });
+
+  it('names no tool that could move money', () => {
+    // The tool vocabulary is the boundary. If someone adds a provider-facing
+    // tool to it, this fails and says which word gave it away.
+    const offenders: string[] = [];
+    for (const kind of AGENT_ACTION_KINDS) {
+      for (const forbidden of FORBIDDEN_TOOL_SUBSTRINGS) {
+        if (kind.toLowerCase().includes(forbidden))
+          offenders.push(`${kind} contains "${forbidden}"`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('exposes no action that carries an amount, a currency or a verdict', () => {
+    // An agent cannot state a price it will be charged or a verdict it wants,
+    // because the schemas are strict and have no such field. Asserted by
+    // parsing, so the claim rests on the schema rather than on reading it.
+    const attempts: unknown[] = [
+      { action: 'ADD_ITEM', sku: 'SKU-A', quantity: 1, unitPrice: 1 },
+      { action: 'ADD_ITEM', sku: 'SKU-A', quantity: 1, currency: 'INR' },
+      { action: 'REQUEST_PURCHASE', reason: 'because', amount: 100 },
+      { action: 'REQUEST_PURCHASE', reason: 'because', verdict: 'ALLOW' },
+      { action: 'REQUEST_PURCHASE', reason: 'because', total: 79900 },
+      { action: 'CAPTURE_PAYMENT', amount: 100 },
+      { action: 'CHARGE_CARD', sku: 'SKU-A' },
+    ];
+    const accepted = attempts.filter(attempt => parseAgentAction(attempt).kind === 'PARSED');
+    expect(accepted).toEqual([]);
   });
 });
 
@@ -258,6 +329,8 @@ describe('the reason code vocabulary', () => {
     ...sourceFiles('packages/kernel/src'),
     ...sourceFiles('packages/policy/src'),
     ...sourceFiles('packages/core/src'),
+    ...sourceFiles('packages/agent/src'),
+    ...sourceFiles('packages/agent/tests'),
     ...sourceFiles('packages/kernel/tests'),
     ...sourceFiles('apps/api/src'),
     ...sourceFiles('apps/eval/src'),
