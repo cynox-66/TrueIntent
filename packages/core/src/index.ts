@@ -284,6 +284,15 @@ export type {
 export type { FeeQuoteRequest, MerchantStateProvider } from './ports/merchant.js';
 
 export type {
+  CatalogProductResult,
+  CatalogProductView,
+  CatalogSearchRequest,
+  CatalogSearchResult,
+  CatalogVersion,
+  MerchantCatalogProvider,
+} from './ports/catalog.js';
+
+export type {
   AuthorizationRepository,
   EvaluationRecord,
   EvaluationRepository,

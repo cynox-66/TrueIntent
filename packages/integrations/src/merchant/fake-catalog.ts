@@ -11,11 +11,18 @@
  * signed probe endpoint, and would have to reason about its own staleness.
  */
 
+import { createHash } from 'node:crypto';
 import { money, type Attribute, type CartAdjustment, type CurrencyCode } from '@capturelock/core';
 import type {
+  CatalogProductResult,
+  CatalogProductView,
+  CatalogSearchRequest,
+  CatalogSearchResult,
+  CatalogVersion,
   FeeQuoteRequest,
   LiveItemState,
   LiveStateResult,
+  MerchantCatalogProvider,
   MerchantId,
   MerchantStateProvider,
   Sku,
@@ -59,7 +66,16 @@ export interface FakeCatalogOptions {
   readonly timeline?: ReadonlyMap<number, readonly CatalogMutation[]>;
 }
 
-export class FakeMerchantCatalog implements MerchantStateProvider {
+/**
+ * One store, two boundaries.
+ *
+ * The browse surface and the kernel's live-state read are served from the same
+ * mutable map, which is the point: an agent browses at one moment, the timeline
+ * advances, and the gate re-reads a genuinely different world. Drift here is a
+ * property of the fixture rather than something a test stages by hand, so the
+ * ordering cannot be got wrong by accident.
+ */
+export class FakeMerchantCatalog implements MerchantStateProvider, MerchantCatalogProvider {
   public readonly name = 'fake-catalog';
 
   private items = new Map<string, LiveItemState>();
@@ -67,6 +83,7 @@ export class FakeMerchantCatalog implements MerchantStateProvider {
   private offlineReason: string | null = null;
   private tick = 0;
   public reads = 0;
+  public searches = 0;
 
   constructor(private readonly options: FakeCatalogOptions) {
     for (const spec of options.items) {
@@ -151,6 +168,81 @@ export class FakeMerchantCatalog implements MerchantStateProvider {
     }
   }
 
+  /**
+   * The catalogue version.
+   *
+   * Content-addressed over everything an agent could have browsed, so any
+   * mutation changes it and an unchanged catalogue always produces the same
+   * value. Derived rather than incremented because a counter would let two
+   * different catalogues share a version after a replay.
+   */
+  async catalogVersion(): Promise<CatalogVersion> {
+    return this.computeCatalogVersion();
+  }
+
+  /**
+   * Free-text search over the same items `read` serves.
+   *
+   * Matching is a deliberately crude token overlap against name, category and
+   * attribute values. It is not a search engine and is not presented as one:
+   * its job is to give the agent grounded candidates so it reasons over
+   * merchant-stated facts instead of inventing them. A real connector would
+   * call the merchant's own search and inherit its ranking.
+   *
+   * Unavailable items are still returned, with `available: false`. Hiding them
+   * would deny the agent the information it needs to explain why it could not
+   * fulfil an intent, and the deterministic checks refuse them anyway.
+   */
+  async search(request: CatalogSearchRequest): Promise<CatalogSearchResult> {
+    this.searches += 1;
+
+    if (this.offlineReason !== null) {
+      return { kind: 'UNAVAILABLE', reason: this.offlineReason };
+    }
+    if (request.merchantId !== this.options.merchantId) {
+      return { kind: 'OK', catalogVersion: this.computeCatalogVersion(), products: [] };
+    }
+
+    const wanted = tokens(request.query);
+    const scored: { view: CatalogProductView; score: number }[] = [];
+
+    for (const item of this.items.values()) {
+      const offered = tokens(
+        `${item.name} ${item.category} ${item.attributes.map(a => a.value).join(' ')}`,
+      );
+      let score = 0;
+      for (const token of wanted) if (offered.has(token)) score += 1;
+      // An empty query lists the catalogue; a query with no overlap matches
+      // nothing, so an agent asking for something the merchant does not sell
+      // gets an honest empty answer rather than an arbitrary substitute.
+      if (wanted.size === 0 || score > 0) scored.push({ view: this.toView(item), score });
+    }
+
+    // Sorted by score then SKU so the same catalogue and query always produce
+    // the same ordering. A scenario that depended on insertion order would pass
+    // or fail depending on fixture construction.
+    scored.sort((a, b) => b.score - a.score || a.view.sku.localeCompare(b.view.sku, 'en'));
+
+    return {
+      kind: 'OK',
+      catalogVersion: this.computeCatalogVersion(),
+      products: scored.slice(0, request.limit).map(entry => entry.view),
+    };
+  }
+
+  async getProduct(merchantId: MerchantId, sku: Sku): Promise<CatalogProductResult> {
+    if (this.offlineReason !== null) {
+      return { kind: 'UNAVAILABLE', reason: this.offlineReason };
+    }
+    const item = merchantId === this.options.merchantId ? this.items.get(sku) : undefined;
+    if (item === undefined) return { kind: 'NOT_FOUND' };
+    return {
+      kind: 'OK',
+      catalogVersion: this.computeCatalogVersion(),
+      product: this.toView(item),
+    };
+  }
+
   async read(request: FeeQuoteRequest): Promise<LiveStateResult> {
     this.reads += 1;
 
@@ -184,4 +276,68 @@ export class FakeMerchantCatalog implements MerchantStateProvider {
     const item = this.items.get(sku);
     if (item !== undefined) this.items.set(sku, update(item));
   }
+
+  /**
+   * Projects a live item into a browse view.
+   *
+   * Note what is *not* preserved: the view is a distinct type from
+   * `LiveItemState`, so a browse result cannot be handed to the kernel by
+   * accident. The price it carries is indicative, and the server re-reads the
+   * authoritative one at quote time from the very same map — which is why drift
+   * in this fake is genuine rather than staged.
+   */
+  private toView(item: LiveItemState): CatalogProductView {
+    return {
+      sku: item.sku,
+      merchantId: item.merchantId,
+      name: item.name,
+      category: item.category,
+      attributes: [...item.attributes],
+      unitPrice: item.unitPrice,
+      available: item.available,
+      availableStock: item.availableStock,
+      subscriptionOnly: item.subscriptionOnly,
+      observedAt: this.options.clock(),
+    };
+  }
+
+  private computeCatalogVersion(): string {
+    const digest = createHash('sha256');
+    digest.update('capturelock.fake-catalog.v1');
+    for (const sku of [...this.items.keys()].sort()) {
+      const item = this.items.get(sku)!;
+      digest.update(
+        [
+          sku,
+          item.name,
+          item.category,
+          String(item.unitPrice.amountMinor),
+          item.unitPrice.currency,
+          String(item.available),
+          String(item.availableStock),
+          String(item.subscriptionOnly),
+          [...item.attributes]
+            .map(a => `${a.name}=${a.value}`)
+            .sort()
+            .join(','),
+        ].join(' '),
+      );
+    }
+    for (const fee of [...this.fees].sort(
+      (a, b) => a.type.localeCompare(b.type, 'en') || a.label.localeCompare(b.label, 'en'),
+    )) {
+      digest.update(`${fee.type} ${fee.label} ${String(fee.amount.amountMinor)}`);
+    }
+    return `cat_${digest.digest('hex').slice(0, 16)}`;
+  }
+}
+
+/** Lowercased word tokens, long enough to be discriminating. */
+function tokens(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(word => word.length > 2),
+  );
 }
