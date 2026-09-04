@@ -55,6 +55,7 @@ import {
   addSeconds,
   asSha256Hex,
   asSnapshotId,
+  format,
   isTerminalReleaseState,
   money,
   type AuthorizationId,
@@ -816,9 +817,13 @@ function describeReserveRefusal(
 ): string {
   if (reason !== 'BUDGET_EXCEEDED') return `The session is ${reason.toLowerCase()}.`;
   const remaining = remainingBudget(session);
-  return `The purchase totals ${String(total.amountMinor)} ${total.currency} (minor units) but only ${String(
-    remaining.amountMinor,
-  )} remains on this session.`;
+  // Stated in currency rather than minor units. This string is read by a
+  // person deciding whether their agent misbehaved, and "549900" is not a
+  // number anyone was asked to reason about.
+  return (
+    `This purchase comes to ${format(total)}, and ${format(remaining)} remains on the session. ` +
+    'Refused before any mandate was created.'
+  );
 }
 
 /** Flattens the capsule for the evidence body. Must stay canonicalizable. */

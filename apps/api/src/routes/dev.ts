@@ -23,7 +23,7 @@
 import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
-import { ReleaseIdSchema } from '@capturelock/core';
+import { ReleaseIdSchema, asTimestamp, type MerchantId, type UserId } from '@capturelock/core';
 import { RAZORPAY_EVENT_ID_HEADER, RAZORPAY_SIGNATURE_HEADER } from '@capturelock/integrations';
 import type { Application } from '../composition.js';
 
@@ -89,9 +89,90 @@ export function isCheckoutHelperEnabled(app: Application): boolean {
   return app.config.nodeEnv !== 'production';
 }
 
+/**
+ * The delegation the buyer demo runs under.
+ *
+ * "Thai dinner for two, under 5,000." The two dining candidates are priced so
+ * one lands at 4,949 all-in and the other at 6,649, which lets the two
+ * protections be shown apart from each other: the tasting menu is outside the
+ * delegation regardless of what the merchant does, and the dinner for two is
+ * inside it until the restaurant reprices between the gates.
+ */
+const DEMO_MERCHANT = 'merchant_alpha' as MerchantId;
+
+const DEMO_DELEGATION = {
+  purpose: 'Thai dinner for two, under 5,000 rupees',
+  bounds: {
+    currency: 'INR' as const,
+    totalBudget: { currency: 'INR' as const, amountMinor: 500_000 },
+    maxPerPurchase: { currency: 'INR' as const, amountMinor: 500_000 },
+    merchants: { mode: 'ALLOWLIST' as const, merchantIds: [DEMO_MERCHANT] },
+    allowedCategories: ['dining'],
+    forbiddenCategories: [],
+    itemsPerPurchase: { min: 1, max: 1 },
+    recurrence: 'ONE_TIME_ONLY' as const,
+  },
+};
+
 export function registerDevRoutes(server: FastifyInstance, app: Application): void {
   registerCheckoutHelper(server, app);
   if (!isDevSimulationEnabled(app)) return;
+
+  /**
+   * Delegates the demo session, server-side.
+   *
+   * This route exists for one reason: delegating a budget is **issuer**
+   * authority, and shipping an issuer key to a browser so a demo page could
+   * call `POST /v1/sessions` itself would hand the agent-facing surface the
+   * exact key the architecture exists to keep away from it. A demo that
+   * undermined its own thesis to be convenient would be worse than no demo.
+   *
+   * So the browser never holds an issuer key. It asks this dev-only route,
+   * which exercises the same `CommerceSessionService.create` a trusted
+   * application would, and gets back a session id and the principal it may act
+   * as — which is all an agent is ever entitled to.
+   *
+   * Guarded exactly like the rest of this module: fake provider, non-production,
+   * re-checked in the handler.
+   */
+  server.post('/v1/dev/demo-session', async (request, reply) => {
+    if (!isDevSimulationEnabled(app)) {
+      return reply.status(404).send({ error: 'NOT_FOUND' });
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+
+    const created = await app.commerceSessionService.create({
+      userId: 'user_priya' as UserId,
+      purpose: DEMO_DELEGATION.purpose,
+      bounds: { ...DEMO_DELEGATION.bounds, expiresAt: asTimestamp(expiresAt) },
+      policyId: app.config.agentPolicyId,
+      policyVersion: app.config.agentPolicyVersion,
+    });
+
+    if (created.kind === 'POLICY_NOT_FOUND') {
+      return reply.status(422).send({
+        error: 'POLICY_NOT_FOUND',
+        message: `No operator policy ${app.config.agentPolicyId}@${app.config.agentPolicyVersion} is seeded.`,
+      });
+    }
+
+    request.log.info(
+      { sessionId: created.session.sessionId },
+      'demo session delegated through the dev route',
+    );
+
+    return reply.status(201).send({
+      sessionId: created.session.sessionId,
+      // The principal an agent may act as. Not a credential: it names who is
+      // acting, and confers nothing an unauthenticated caller could not claim.
+      principal: { userId: created.session.userId, sessionId: created.session.sessionId },
+      merchantId: DEMO_MERCHANT,
+      purpose: created.session.purpose,
+      bounds: created.session.bounds,
+    });
+  });
 
   /**
    * Simulates the payer authorizing a payment.

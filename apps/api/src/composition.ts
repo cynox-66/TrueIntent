@@ -209,6 +209,53 @@ function demoCatalog(clock: Clock): FakeMerchantCatalog {
         unitPriceMinor: 15_000,
         availableStock: 30,
       },
+      // ---------------------------------------------------------------------
+      // Dining, for the agentic commerce demo.
+      //
+      // Two candidates so the agent has a real choice to make, and so the two
+      // protections can be shown apart from each other:
+      //
+      //   AUTHORITY VIOLATION  the tasting menu comes to 6,649 all-in, outside
+      //                        a 5,000 delegation, and is refused before a
+      //                        mandate exists — reality never enters into it.
+      //   REALITY DRIFT        the dinner for two comes to 4,949 all-in, is
+      //                        inside the delegation, is allowed at gate 1, and
+      //                        is refused at gate 2 once the restaurant
+      //                        reprices it to 5,499 all-in.
+      //
+      // The item prices are set so the *totals* land on those figures once the
+      // merchant's own 150 service charge is added. What the user constrained
+      // is what they will pay, so that is the number the demo should show.
+      //
+      // Conflating those two would be the easiest way to make this demo look
+      // like one check doing double duty. They are different checks, catching
+      // different failures, at different moments.
+      {
+        sku: 'SKU-THAI-DINNER-2',
+        name: 'Bangkok Table — Thai Dinner for Two',
+        category: 'dining',
+        attributes: [
+          { name: 'cuisine', value: 'thai' },
+          { name: 'serves', value: '2' },
+          { name: 'service', value: 'dine-in' },
+        ],
+        // 4,799 + 150 service = 4,949 all-in.
+        unitPriceMinor: 479_900,
+        availableStock: 8,
+      },
+      {
+        sku: 'SKU-THAI-DINNER-DLX',
+        name: "Bangkok Table — Chef's Tasting for Two",
+        category: 'dining',
+        attributes: [
+          { name: 'cuisine', value: 'thai' },
+          { name: 'serves', value: '2' },
+          { name: 'service', value: 'dine-in' },
+        ],
+        // 6,499 + 150 service = 6,649 all-in, outside a 5,000 delegation.
+        unitPriceMinor: 649_900,
+        availableStock: 4,
+      },
       {
         // The intent-drift bait. Cheap enough that a naive optimiser reaches
         // for it, and in a category the user never authorized.
