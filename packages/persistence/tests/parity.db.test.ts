@@ -44,6 +44,8 @@ import {
   releaseId,
   review,
   reviewId,
+  POLICY_ID,
+  POLICY_VERSION,
   seed,
   seedSession,
   sessionId,
@@ -1061,6 +1063,96 @@ describe('evidence', () => {
     });
 
     expect(memory).toMatchObject({ valid: true, defects: [] });
+  });
+
+  it('round-trips an AGENT_CONTEXT capsule body, identically', async () => {
+    // The agentic envelope carries the largest structured body in the ledger:
+    // nested objects, an array of lines, and integer money. A field the
+    // canonicalizer accepts but `jsonb` drops would hash fine on append and
+    // come back as PAYLOAD_MODIFIED on read, so the round trip is asserted for
+    // this kind specifically rather than assumed from the DECISION case.
+    const { memory } = await parity(async backend => {
+      const chainId = authorizationId(1);
+      await backend.repos.evidence.append({
+        chainId,
+        kind: 'AGENT_CONTEXT',
+        recordedAt: T1,
+        body: {
+          capsuleHash: sha('capsule-1'),
+          capsule: {
+            capsuleVersion: 1,
+            sessionId: sessionId(1),
+            userId: 'user_priya',
+            intentText: 'Thai curry dinner for 4, vegetarian, under 800 rupees',
+            boundsHash: sha('bounds-1'),
+            merchantId: 'merchant_alpha',
+            catalogVersion: 'cat_0123456789abcdef',
+            lines: [
+              {
+                sku: 'SKU-THAI-CURRY-KIT',
+                quantity: 1,
+                unitPriceMinor: 28_000,
+                name: 'Thai Green Curry Kit',
+                category: 'thai-meal-kit',
+              },
+              {
+                sku: 'SKU-THAI-RICE-1KG',
+                quantity: 2,
+                unitPriceMinor: 18_000,
+                name: 'Jasmine Rice 1kg',
+                category: 'groceries',
+              },
+            ],
+            agentDecision: {
+              model: 'deterministic-planner',
+              steps: 4,
+              refusedSteps: 1,
+              rationale: 'Closest catalogue match to a vegetarian Thai dinner for four.',
+            },
+            authorizationId: authorizationId(1),
+            intentHash: sha('intent-1'),
+            snapshotId: snapshotId(1),
+            snapshotHash: sha('snapshot-1'),
+            currency: 'INR',
+            totalMinor: 64_000,
+            policyId: POLICY_ID,
+            policyVersion: POLICY_VERSION,
+            policyHash: sha('policy'),
+            observedAt: T1,
+          },
+        },
+      });
+
+      const verification = await backend.repos.evidence.verifyChain(chainId);
+      const listed = await backend.repos.evidence.listByChain(chainId);
+      return {
+        valid: verification.valid,
+        defects: verification.defects.map(d => d.kind),
+        kind: listed[0]?.kind,
+        body: normalize(listed[0]?.body),
+      };
+    });
+
+    expect(memory).toMatchObject({ valid: true, defects: [], kind: 'AGENT_CONTEXT' });
+  });
+
+  it('accepts the agentic envelope kind on both stores', async () => {
+    // The kind vocabulary is enumerated in exactly two places: ENVELOPE_KINDS
+    // and the CHECK constraint on evidence_envelopes.kind. This is what fails
+    // if they ever disagree.
+    const { memory } = await parity(async backend => {
+      const chainId = authorizationId(1);
+      const appended = await observe(() =>
+        backend.repos.evidence.append({
+          chainId,
+          kind: 'AGENT_CONTEXT',
+          recordedAt: T1,
+          body: { capsuleHash: sha('c'), capsule: { capsuleVersion: 1 } },
+        }),
+      );
+      return { accepted: appended !== null && !('refused' in (appended as object)) };
+    });
+    expect(memory).toEqual({ accepted: true });
   });
 
   it('detects a chain that does not end at an expected head, identically', async () => {
