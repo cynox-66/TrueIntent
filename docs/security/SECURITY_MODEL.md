@@ -31,6 +31,9 @@
 0  Structural        schema validation, recomputed arithmetic, currency consistency
 ────────────────────────────────────────────────────────────────────────────────
    Advisory          OUTSIDE the kernel; may only restrict, never grant
+   Session           ABOVE the kernel; aggregate budget and delegated scope.
+                     Refuses before a mandate exists, so it can only ever
+                     subtract from what the kernel would have allowed.
 ```
 
 ## 3. Where each attack stops
@@ -40,6 +43,30 @@ there is no field. The constraints are loaded by id and `intentHash` is
 re-verified, so editing the database row is detected. The cart total is
 recomputed from server-priced line items, and the intent stage compares it against
 the authorized ceiling. `INTENT_TOTAL_EXCEEDED`, DENY, before any provider call.
+
+**A compromised agent overspends one purchase at a time.** Each transaction is
+individually within its ceiling, and together they exceed what the user
+delegated — the failure a per-transaction check structurally cannot see. The
+session's aggregate budget refuses it twice over: an atomic reservation whose
+`WHERE` clause carries the whole predicate, backed by the
+`commerce_sessions_budget_bounded` CHECK constraint, and the derived mandate's
+own ceiling of `min(maxPerPurchase, remainingBudget)`, which puts the same
+refusal inside the pure kernel as `INTENT_TOTAL_EXCEEDED`. Neither rests on the
+other being right.
+
+**A prompt-injected model is told to capture a payment.** There is no tool for
+it. The demand fails schema validation like any other malformed output, the run
+ends without a purchase, and the wasted step is recorded. Asserted end to end
+with a product whose name carries the instruction.
+
+**An agent invents a SKU, or a price for one.** A draft cart line has two fields,
+`sku` and `quantity`. There is no price for it to state. An invented SKU is
+refused on grounding by the runtime, and again by the live merchant read at quote
+time.
+
+**An attacker raises a session budget in the database.** The bounds hash was
+recorded at delegation and is recomputed on every purchase.
+`SESSION_BOUNDS_HASH_MISMATCH`, refused before a mandate exists.
 
 **A merchant raises the price a second before capture.** The capture gate reads
 live state fresh and compares the live unit price against the price about to be
@@ -77,11 +104,18 @@ The kernel faithfully enforces whatever mandate it is given. Nothing it does
 prevents an agent from _writing its own mandate_ — that has to be prevented at
 the boundary, and in Phase 1 it was not.
 
-| authority | header                            | may do                                        |
-| --------- | --------------------------------- | --------------------------------------------- |
-| principal | `x-capturelock-user` / `-session` | quote, request a release, request a capture   |
-| issuer    | `x-capturelock-issuer-key`        | create an authorization                       |
-| operator  | `x-capturelock-operator-key`      | resolve a paused review, force reconciliation |
+| authority | header                            | may do                                                                |
+| --------- | --------------------------------- | --------------------------------------------------------------------- |
+| principal | `x-capturelock-user` / `-session` | quote, shop, request a release, request a capture                     |
+| issuer    | `x-capturelock-issuer-key`        | create an authorization, **delegate or revoke a commerce session**    |
+| operator  | `x-capturelock-operator-key`      | resolve a paused review, force reconciliation, **read agent context** |
+
+Delegating a commerce session is issuer authority for the same reason creating an
+authorization is: it writes a budget, and a party that can write its own budget
+has not been constrained by anyone. The session id an agent presents in its
+principal must be the session it is spending, so every mandate derived from a
+delegation is bound to it by the authority stage's existing `SESSION_MISMATCH`
+check rather than by a new mechanism.
 
 An agent holds only the first. Without the split, an agent could mint a mandate
 with its own budget, or clear its own PAUSE — either of which makes every
@@ -125,6 +159,17 @@ than one that does not exist.
   partitions, failover and multi-region are untested.
 - **The shipped advisory reviewer is a lexical heuristic**, not an intent
   classifier.
+- **Semantic intent drift is caught by category, not by understanding.** Twelve
+  energy drinks are refused because `beverages` is not a delegated category, not
+  because anything understood that they are not a Thai dinner. An agent that
+  drifted _within_ the delegated categories would not be caught by this.
+- **The buyer model that ships is a small deterministic planner.** An LLM-backed
+  adapter exists and implements the same interface, but is off unless configured;
+  the guarantees do not depend on which is used, and that is the point of the
+  interface.
+- **A crash mid-purchase withholds session budget until a sweep runs.** The safe
+  direction — budget unavailable rather than double-spendable — but a real
+  failure mode that did not exist before the aggregate did.
 - **Capture semantics were measured against the live API** and are no longer the
   open question they were. A full authorize → capture lifecycle was run in test
   mode: `payment_capture: 0` genuinely holds a payment at `authorized`, the

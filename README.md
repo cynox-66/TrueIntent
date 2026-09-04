@@ -26,6 +26,12 @@ The property everything serves:
 
 ## What it does
 
+A user delegates a **bounded commerce session** — a budget, a purpose, allowed
+merchants and categories, an expiry. A buyer agent then shops inside it: it
+searches the merchant catalogue, builds a cart, and asks CaptureLock to verify a
+purchase. It never holds the key that created the session, and there is no tool
+in its vocabulary for moving money.
+
 An agent proposes SKUs and quantities. It does **not** propose prices, its own
 budget, which policy applies, or what time it is — the request schemas have no
 field for any of those. CaptureLock reads live merchant state, prices the cart
@@ -80,15 +86,17 @@ agent behaviour. See [`docs/evaluation/EVALUATION_PLAN.md`](docs/evaluation/EVAL
 
 ## Design decisions worth knowing about
 
-|                                                    |                                                                                                                                                                                                                                        |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The kernel is a pure function.**                 | No I/O, no clock, no randomness. That is what makes a decision replayable from evidence, and it is enforced by a lint rule and an architecture test, not just intended.                                                                |
-| **Stages cannot approve anything.**                | A stage reports findings; one combiner decides. ALLOW requires every mandatory stage to have completed with nothing found. A stage that throws yields DENY — tested by injecting a fault into every position.                          |
-| **Freshness compares terms, not memories.**        | Not "does the agent's remembered hash match live?" — a malicious agent just sends the current hash. It is "do the terms about to be charged match what the merchant will honour now?"                                                  |
-| **Duplicate prevention is a database constraint.** | A partial unique index allows one non-terminal release per authorization. Ten concurrent requests: one succeeds, nine are rejected by Postgres.                                                                                        |
-| **Indeterminate is not failure.**                  | Razorpay's capture is not idempotent and its order create rejects duplicate receipts, so a blind retry is _wrong_. There is no edge back into an in-flight state; recovery asks the provider what it knows.                            |
-| **Probabilistic components may only restrict.**    | The advisory intent layer can lower a verdict, never raise one. A prompt-injected reviewer cannot approve anything, and the "fail open or closed on timeout?" question dissolves.                                                      |
-| **The test double is checked, not trusted.**       | 44 cases run one operation sequence against the in-memory store and against Postgres and compare what a caller can observe — including _which_ constraint refused a write. A fake that quietly diverged is how a real defect once hid. |
+|                                                                          |                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The kernel is a pure function.**                                       | No I/O, no clock, no randomness. That is what makes a decision replayable from evidence, and it is enforced by a lint rule and an architecture test, not just intended.                                                                                                                            |
+| **Stages cannot approve anything.**                                      | A stage reports findings; one combiner decides. ALLOW requires every mandatory stage to have completed with nothing found. A stage that throws yields DENY — tested by injecting a fault into every position.                                                                                      |
+| **Freshness compares terms, not memories.**                              | Not "does the agent's remembered hash match live?" — a malicious agent just sends the current hash. It is "do the terms about to be charged match what the merchant will honour now?"                                                                                                              |
+| **Duplicate prevention is a database constraint.**                       | A partial unique index allows one non-terminal release per authorization. Ten concurrent requests: one succeeds, nine are rejected by Postgres.                                                                                                                                                    |
+| **Indeterminate is not failure.**                                        | Razorpay's capture is not idempotent and its order create rejects duplicate receipts, so a blind retry is _wrong_. There is no edge back into an in-flight state; recovery asks the provider what it knows.                                                                                        |
+| **Probabilistic components may only restrict.**                          | The advisory intent layer can lower a verdict, never raise one. A prompt-injected reviewer cannot approve anything, and the "fail open or closed on timeout?" question dissolves.                                                                                                                  |
+| **The test double is checked, not trusted.**                             | 65 cases run one operation sequence against the in-memory store and against Postgres and compare what a caller can observe — including _which_ constraint refused a write. A fake that quietly diverged is how a real defect once hid.                                                             |
+| **An agent's budget is bounded in aggregate, not just per transaction.** | An 800-per-purchase mandate spent repeatedly is the failure a per-transaction ceiling structurally cannot see. A session budget refuses it twice: an atomic reservation backed by a CHECK constraint, and the derived mandate's own ceiling inside the pure kernel. Neither rests on the other.    |
+| **The agent's tool vocabulary has no word for money.**                   | Not "present but guarded" — absent. A model that hallucinates `capture_payment` emits an action that fails schema validation like any other malformed output. Its draft cart lines carry a SKU and a quantity, so "the agent lied about the price" is unrepresentable rather than merely detected. |
 
 ## Quickstart
 
@@ -100,14 +108,15 @@ pnpm db:up && pnpm db:migrate   # Postgres schema from scratch
 pnpm dev                        # API on :3000, Postgres, fake provider
 
 pnpm demo           # the walkthrough, asserted at every step (needs `pnpm dev`)
+pnpm demo agent     #   …a bounded AI agent shopping inside delegated authority
 pnpm demo review    #   …the operator flow: paused, approved, re-verified
 pnpm demo happy     #   …verified at both gates, then captured
 
 pnpm scenario       # 9 end-to-end lifecycle scenarios
 pnpm eval           # baseline vs CaptureLock → reports/
 
-pnpm test           # 519 offline + 42 console tests, no Docker
-pnpm test:db        # 85 tests against real Postgres, incl. 44 parity cases
+pnpm test           # 680 offline + 45 console tests, no Docker
+pnpm test:db        # 110 tests against real Postgres, incl. 65 parity cases
 pnpm web            # operator console at :5173, proxying the API
 pnpm smoke:razorpay         # opt-in: live order semantics
 pnpm smoke:razorpay:capture # opt-in: live capture semantics (one browser step)
@@ -203,14 +212,19 @@ not production.
 ```
 packages/core          domain model, money, canonical hashing, ports    (no I/O)
 packages/policy        deterministic rule evaluation                    (pure)
+packages/agent         bounded buyer runtime, tool vocabulary, model port
 packages/kernel        pipeline, stages, combiner, FSM, services
 packages/evidence      signed hash chain, replay verification
 packages/integrations  Razorpay adapter + deterministic fakes
 packages/persistence   SQL schema, Postgres and in-memory repositories
 apps/api               thin HTTP layer
-apps/eval              baseline-versus-CaptureLock harness
-docs/decisions         ADR-001..018 — why, and what was rejected
+apps/eval              baseline-versus-CaptureLock harness + agentic scenarios
+docs/decisions         ADR-001..021 — why, and what was rejected
 ```
+
+`packages/agent` imports `core` and `zod` and nothing else — no repository, no
+provider, no kernel. The strongest thing it can produce is a request for
+verification, and an architecture test says so.
 
 ## What is NOT guaranteed
 

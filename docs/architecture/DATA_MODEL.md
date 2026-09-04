@@ -151,3 +151,55 @@ pnpm db:reset     # drop everything and reapply (refused in production)
 `updated_at` rather than `in_flight_since`, because a release stranded in a
 transient state never made a provider call and so never set the latter
 ([ADR-011](../decisions/ADR-011-unit-of-work-and-stranded-releases.md)).
+
+## Commerce sessions (Phase 5)
+
+Two tables sit above the per-purchase mandate, for the bounded agentic layer.
+See [ADR-021](../decisions/ADR-021-bounded-agent-authority.md).
+
+### `commerce_sessions`
+
+What the user delegated: an aggregate budget, a purpose in their own words, the
+merchants and categories in scope, and an expiry. `bounds_hash` is recomputed on
+every purchase, so raising a budget by editing the row is _detected_ rather than
+enforced — the same property `intent_hash` gives a single authorization.
+
+`reserved_minor` and `spent_minor` are the accounting. The constraint that
+matters:
+
+```sql
+CONSTRAINT commerce_sessions_budget_bounded
+  CHECK (reserved_minor >= 0
+         AND spent_minor >= 0
+         AND reserved_minor + spent_minor <= total_budget_minor)
+```
+
+That is the guarantee. `reserve`'s WHERE clause is the fast path; this is what
+still refuses an overspend if the repository were ever rewritten into a
+read-then-write.
+
+### `commerce_session_purchases`
+
+One row per purchase attempt, keyed by the authorization it minted — a purchase
+attempt _is_ the mandate it created. `settlement_state` is a compare-and-set
+target (`RESERVED → SETTLED | RELEASED`), which is what makes counting spend
+exactly-once a property of the database rather than of the caller being invoked
+exactly once.
+
+```sql
+CREATE UNIQUE INDEX commerce_session_purchases_request_idx
+  ON commerce_session_purchases (session_id, purchase_request_id);
+```
+
+`purchase_request_id` is derived server-side from the session and the agent's
+idempotency key, so a retried request finds this row and is handed back the
+authorization it already created rather than minting a second mandate.
+
+### One new evidence kind
+
+`AGENT_CONTEXT` carries the `ContextCapsule`: what the user asked for, what the
+agent selected, and which catalogue version it was looking at. Appended before
+the order gate, so a chain reads in causal order. The kind vocabulary is
+enumerated in exactly two places — `ENVELOPE_KINDS` and the CHECK constraint on
+`evidence_envelopes.kind` — and a parity case appends a full capsule through both
+stores so a disagreement between them fails the build.

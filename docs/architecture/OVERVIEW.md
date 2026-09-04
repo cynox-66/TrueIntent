@@ -16,7 +16,11 @@ The property everything else serves:
 ## 2. Shape of the system
 
 ```
-USER ──── intent ────► normalization ────► AuthorizedIntent (hashed, frozen)
+USER ──── goal ──────► SessionAuthority (bounded budget, scope, expiry)
+                                │
+                                │  derives, server-side, per purchase
+                                ▼
+          normalization ────► AuthorizedIntent (hashed, frozen)
                                                     │
 AGENT ─── proposes SKUs + quantities ───────────────┤
                                                     ▼
@@ -86,6 +90,30 @@ every mandatory stage with nothing found. A stage that throws becomes an
 `ERRORED` outcome plus a DENY finding — **there is no code path from an exception
 to ALLOW**, and the tests inject a faulting stage into every position to prove it.
 
+## 3a. The agentic layer
+
+An `AuthorizedIntent` bounds one purchase and is consumed by the release that
+spends it. That is the wrong shape for an autonomous agent making several
+purchases against one delegation: an agent with an 800-per-purchase mandate
+could spend 800 repeatedly, and every transaction would pass every check, because
+the check it needed to fail did not exist.
+
+`SessionAuthority` is that check. It sits above the authorization, carries an
+aggregate budget, and every purchase derives its mandate from it server-side —
+so the agent never mints one. The derived ceiling is
+`min(maxPerPurchase, remainingBudget)`, which makes the aggregate enforced twice
+and independently: by an atomic reservation backed by a CHECK constraint, and by
+the kernel's own `INTENT_TOTAL_EXCEEDED` inside the pure evaluator.
+
+The budget hold is taken before any release exists, so a crash withholds budget
+rather than freeing it for a second spend. That is what let this layer be added
+without changing a line of `ReleaseService`, the gates, `mintGrant`, or the
+provider boundary. See [ADR-021](../decisions/ADR-021-bounded-agent-authority.md).
+
+The agent's tool vocabulary has no word for moving money. A model that
+hallucinates `capture_payment` emits an action that fails schema validation like
+any other malformed output.
+
 ## 4. Two gates
 
 | Gate             | Endpoint                        | Moves money?                                        |
@@ -102,13 +130,19 @@ where the product earns its name.
 ```
 core          domain model, money, canonical hashing, ports.   No I/O.
 policy        deterministic rule evaluation.                   Pure.
+agent         bounded buyer runtime, tool vocabulary, model port. Core + zod only.
 kernel        pipeline, stages, combiner, FSM, services.       Pure core + orchestration.
 evidence      signed hash chain, replay verification.
 integrations  Razorpay adapter, deterministic fakes.
 persistence   Drizzle-free SQL schema, Postgres + in-memory repositories.
 apps/api      thin HTTP layer.
-apps/eval     baseline-versus-CaptureLock harness.
+apps/eval     baseline-versus-CaptureLock harness, agentic scenarios.
 ```
+
+`agent` sits deliberately outside the money path: it imports `core` and `zod`
+and nothing else, so it holds no repository and no provider. The strongest thing
+it can produce is a request for verification — asserted by an architecture test,
+not merely intended.
 
 The dependency graph is acyclic and `kernel` imports no framework, no driver, and
 no provider — asserted by an architecture test, not just intended.
@@ -152,6 +186,11 @@ transaction and recorded in `schema_migrations`. `pnpm db:migrate`,
 | Session expiration horizon       | Per-authorization `notBefore`/`notAfter` plus a snapshot freshness window                                            |
 | Human approval channel for PAUSE | `POST /v1/reviews/:id/resolve`, separate principal, re-verifies on approval                                          |
 
+| Question                           | Resolution                                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Bounding an agent across purchases | `SessionAuthority`, enforced twice — [ADR-021](../decisions/ADR-021-bounded-agent-authority.md)          |
+| Why an agent may spend at all      | It may not. It requests; the kernel decides — [ADR-021](../decisions/ADR-021-bounded-agent-authority.md) |
+
 | Question                        | Resolution                                                                                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | Transaction boundaries          | Unit of work; three commits around the provider call — [ADR-011](../decisions/ADR-011-unit-of-work-and-stranded-releases.md)               |
@@ -175,8 +214,16 @@ transaction and recorded in `schema_migrations`. `pnpm db:migrate`,
   induced on demand.
 - **Evidence key management.** A local environment key. An attacker holding it
   can forge history; production needs an HSM or KMS plus external anchoring.
-- **A real merchant integration.** The live-state provider is a deterministic
-  fake. A real one must reason about its own staleness.
+- **A real merchant integration.** Both the live-state provider and the
+  catalogue browse surface are one deterministic fake. A real one must reason
+  about its own staleness.
+- **Semantic intent drift is caught by category, not by understanding.** Twelve
+  energy drinks are refused because `beverages` is not a delegated category, not
+  because anything understood that they are not a Thai dinner. The advisory
+  layer remains the right home for a judgement, and remains a lexical heuristic.
+- **The shipped buyer model is a small deterministic planner**, unless an
+  Anthropic key is configured. The architecture is what is demonstrated; the
+  planner is chosen so the demonstration is reproducible.
 - **Multi-instance deployment.** Concurrency is tested against real database
   contention, but from one process. Partitions and failover are untested.
 - **Grant single-use is per-process.** Two API instances do not share a

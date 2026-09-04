@@ -93,7 +93,17 @@ Every agent operating in this repository must strictly adhere to the following r
   truth, a unit of work with explicit transaction boundaries, the grant enforced as a
   capability at the provider port, separated HTTP authority, request-scoped idempotency,
   two recovery sweeps, and an end-to-end scenario engine.
-- **Phase 3 (next)**: See "Recommended next phase" in the Phase 2 engineering report.
+- **Phase 5 (complete)**: The bounded agentic commerce layer. A delegated
+  `SessionAuthority` above the per-purchase mandate, an aggregate budget enforced
+  by an atomic reservation and again by the kernel, a merchant catalogue browse
+  boundary, a bounded buyer agent with a `BuyerModel` port, the `ContextCapsule`
+  in evidence, and the agentic demo and evaluation suite. See
+  `docs/decisions/ADR-021-bounded-agent-authority.md`.
+
+  It added **no line** to `ReleaseService`, the kernel, the gates, `mintGrant`,
+  or the provider boundary. That was a design constraint, not an accident: the
+  budget hold is taken before any release exists, so safety comes from the hold
+  rather than from settlement, and settlement can be lazy and idempotent.
 
 ### Corrections made in Phase 1 that supersede earlier guidance
 
@@ -161,6 +171,32 @@ the older documents should treat these as authoritative:
     Foreign keys, process-restart durability and cross-process isolation are out
     of its reach. Say so in the code, and put the assertion in the Postgres-only
     block, so the boundary is checked rather than assumed.
+
+### Additional non-negotiables established in the agentic layer
+
+33. **The agent's tool vocabulary must never contain a word for moving money.**
+    Not guarded, not permission-checked — absent. `FORBIDDEN_TOOL_SUBSTRINGS` and
+    an architecture test enforce it. A model that hallucinates a payment tool
+    must produce a validation failure, not a permission failure, because the two
+    fail differently under a bug.
+34. **No agent-facing schema may carry an amount, a currency, a total, a unit
+    price, a verdict, a user identity or a policy.** Every request schema is
+    `.strict()`, and the API suite sends each of those fields and expects a 400.
+    "The agent cannot state it" and "we happen not to read it today" are
+    different claims, and only the first survives a refactor.
+35. **A budget hold is taken before the release exists and resolved only at a
+    terminal state.** Never the other way round. The crash window must withhold
+    budget, not free it — a hold that outlives its purpose is a sweep's problem,
+    while a budget freed early is a double spend.
+36. **An aggregate limit must be enforced by a database predicate, not by
+    application arithmetic.** `reserve` is one statement whose WHERE clause
+    carries the whole condition, with a CHECK constraint behind it. A
+    read-then-check would be readable and wrong.
+37. **The agent layer may only subtract.** Every check it makes is duplicated
+    somewhere the kernel can see — scope by the derived intent's categories and
+    merchants, budget by the derived ceiling. A guarantee that exists only in the
+    agent layer is a guarantee that disappears the moment someone calls the
+    release API directly.
 
 ### Additional non-negotiables established in Phase 1
 
