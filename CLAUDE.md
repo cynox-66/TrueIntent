@@ -39,3 +39,5 @@ pnpm format:check    # Verify Prettier compliance in CI
 - **Error Handling**: Use structured `ReasonCode`s. Never swallow errors or log raw secrets.
 - **Testing**: Vitest for all unit, integration, and adversarial tests. Every new security behavior requires a test.
 - **Documentation**: Record architectural changes in `docs/decisions/` (ADRs). Consult `docs/` before altering security logic.
+
+## NEVER PUT YOURSELF AS CO-AUTHOR IN ANY COMMITS OR PUSHES
