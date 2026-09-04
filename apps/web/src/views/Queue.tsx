@@ -164,7 +164,10 @@ function QueueRow({ item }: { item: OperatorQueueItem }): ReactNode {
         <span className="queue-age" title={formatAbsolute(item.updatedAt)}>
           updated {formatRelative(item.updatedAt)}
         </span>
-        <a className="btn btn-primary" href={hrefFor({ name: 'release', releaseId: item.releaseId })}>
+        <a
+          className="btn btn-primary"
+          href={hrefFor({ name: 'release', releaseId: item.releaseId })}
+        >
           Open release
         </a>
         <a

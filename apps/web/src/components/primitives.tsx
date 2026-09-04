@@ -196,7 +196,13 @@ export function describeError(error: unknown): { title: string; detail: string }
   };
 }
 
-export function ErrorBlock({ error, onRetry }: { error: unknown; onRetry?: () => void }): ReactNode {
+export function ErrorBlock({
+  error,
+  onRetry,
+}: {
+  error: unknown;
+  onRetry?: () => void;
+}): ReactNode {
   const { title, detail } = describeError(error);
   return (
     <div className="error-block" role="alert">

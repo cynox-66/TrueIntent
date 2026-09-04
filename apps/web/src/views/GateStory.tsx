@@ -223,11 +223,7 @@ function Headline({
       <VerdictBanner
         tone={order.verdict === 'DENY' ? 'danger' : 'attention'}
         glyph={order.verdict === 'DENY' ? '⛔' : '⏸'}
-        title={
-          order.verdict === 'DENY'
-            ? 'REFUSED AT THE ORDER GATE'
-            : 'PAUSED AT THE ORDER GATE'
-        }
+        title={order.verdict === 'DENY' ? 'REFUSED AT THE ORDER GATE' : 'PAUSED AT THE ORDER GATE'}
       >
         {money} did not pass the first gate, so no payable order was ever created and there is
         nothing for a payer to authorize.
@@ -310,7 +306,11 @@ export function GateStory({
       {changed.length > 0 && (
         <section className="panel">
           <header className="panel-head">
-            <h2>{newAtCapture.length > 0 ? 'What changed between the gates' : 'Why the capture gate refused'}</h2>
+            <h2>
+              {newAtCapture.length > 0
+                ? 'What changed between the gates'
+                : 'Why the capture gate refused'}
+            </h2>
           </header>
           <div className="panel-body">
             {newAtCapture.length > 0 && (

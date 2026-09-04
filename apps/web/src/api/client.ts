@@ -18,7 +18,14 @@
 
 import type {
   AgentContextResponse,
+  AgentRunResponse,
+  AgentSessionView,
+  AgentTimelineResponse,
   AuthorizationView,
+  CreateSessionRequest,
+  DemoSessionResponse,
+  PurchaseOutcomeResponse,
+  PurchaseRequestBody,
   ChainVerificationResponse,
   EvidenceDetailResponse,
   EvidenceTimelineResponse,
@@ -43,6 +50,15 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /**
+     * The parsed response body, when there was one.
+     *
+     * Kept because a refusal is not an empty failure: a 422 from a gate carries
+     * the reason codes that explain it, and discarding them left the UI able to
+     * say only "the API returned 422" about the most interesting thing the
+     * system does.
+     */
+    readonly body: unknown = null,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -66,9 +82,23 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * The acting user and the session being spent.
+ *
+ * An agent holds this and nothing else. The session id must be the session the
+ * request is against — the server refuses a mismatch, which is how a mandate
+ * stays bound to the delegation that produced it.
+ */
+export interface Principal {
+  readonly userId: string;
+  readonly sessionId: string;
+}
+
 interface RequestOptions {
   readonly method?: 'GET' | 'POST';
   readonly operator?: OperatorCredential;
+  readonly principal?: Principal;
+  readonly headers?: Readonly<Record<string, string>>;
   readonly body?: unknown;
   readonly signal?: AbortSignal;
 }
@@ -79,6 +109,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     headers['x-capturelock-operator-key'] = options.operator.key;
     headers['x-capturelock-operator'] = options.operator.name;
   }
+  if (options.principal !== undefined) {
+    headers['x-capturelock-user'] = options.principal.userId;
+    headers['x-capturelock-session'] = options.principal.sessionId;
+  }
+  for (const [key, value] of Object.entries(options.headers ?? {})) headers[key] = value;
   if (options.body !== undefined) headers['content-type'] = 'application/json';
 
   let response: Response;
@@ -116,10 +151,34 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       response.status,
       envelope.error ?? 'UNKNOWN_ERROR',
       envelope.message ?? `The API returned ${String(response.status)}.`,
+      parsed,
     );
   }
 
   return parsed as T;
+}
+
+/**
+ * Like `request`, but returns a 422 body instead of throwing.
+ *
+ * A refusal is the most interesting answer this product gives, and it arrives
+ * as a 422 carrying reason codes. Treating it as an exception would push the
+ * story into a catch block and make "CaptureLock said no" look like "something
+ * broke" — which is exactly the distinction the UI exists to draw. Every other
+ * status still throws.
+ */
+async function requestAllowingRefusal<T>(path: string, options: RequestOptions): Promise<T> {
+  try {
+    return await request<T>(path, options);
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 422 || error.status === 202)) {
+      // The body is the answer, reason codes and all. The envelope fields are
+      // filled in only where the server did not already provide them.
+      const body = (error.body ?? {}) as Record<string, unknown>;
+      return { moneyMoved: false, ...body, error: error.code, message: error.message } as T;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -183,6 +242,107 @@ export const api = {
       method: 'POST',
       operator,
       body: { resolution },
+    });
+  },
+
+  // ---- the buyer surface -------------------------------------------------
+  // Principal authority: the user's own session, on the screen they are
+  // standing in front of. No operator credential is involved.
+
+  /**
+   * Starts the demo session.
+   *
+   * Delegating a budget is issuer authority. Rather than ship an issuer key to
+   * a browser — which would hand the agent-facing surface the exact key the
+   * architecture exists to keep away from it — this asks a dev-only route to
+   * perform the delegation server-side and returns only the principal, which
+   * confers nothing an unauthenticated caller could not claim.
+   */
+  startDemoSession(): Promise<DemoSessionResponse> {
+    return request('/v1/dev/demo-session', { method: 'POST' });
+  },
+
+  /** Simulates the payer authorizing at the provider. Dev-only, fake provider. */
+  simulatePayerAuthorization(releaseId: string): Promise<unknown> {
+    return request('/v1/dev/simulate-authorization', { method: 'POST', body: { releaseId } });
+  },
+
+  /**
+   * Moves the merchant's world, not CaptureLock's copy of it.
+   *
+   * This is what makes the drift scenario a real one: the restaurant changes
+   * its price, nothing in CaptureLock is touched, and the capture gate finds
+   * out on its next live read.
+   */
+  setCatalogPrice(sku: string, unitPriceMinor: number): Promise<unknown> {
+    return request('/v1/dev/catalog', {
+      method: 'POST',
+      body: { kind: 'SET_PRICE', sku, unitPriceMinor },
+    });
+  },
+
+  /** Delegates a bounded session. Issuer authority, held by this application. */
+  createSession(body: CreateSessionRequest, issuerKey: string): Promise<AgentSessionView> {
+    return request('/v1/sessions', {
+      method: 'POST',
+      body,
+      headers: { 'x-capturelock-issuer-key': issuerKey },
+    });
+  },
+
+  /** Runs the bounded agent. It shops; it does not buy. */
+  runAgent(
+    sessionId: string,
+    body: { merchantId: string; goal: string },
+    principal: Principal,
+  ): Promise<AgentRunResponse> {
+    return request(`/v1/sessions/${encodeURIComponent(sessionId)}/agent`, {
+      method: 'POST',
+      body,
+      principal,
+    });
+  },
+
+  /**
+   * Asks CaptureLock to verify a purchase.
+   *
+   * Note what the body cannot carry: no amount, no currency, no total, no
+   * verdict. The server derives every one of those. A 422 here is a refusal,
+   * not a transport failure, so it is returned rather than thrown.
+   */
+  requestPurchase(
+    sessionId: string,
+    body: PurchaseRequestBody,
+    principal: Principal,
+  ): Promise<PurchaseOutcomeResponse> {
+    return requestAllowingRefusal(`/v1/sessions/${encodeURIComponent(sessionId)}/purchase`, {
+      method: 'POST',
+      body,
+      principal,
+    });
+  },
+
+  requestCapture(
+    sessionId: string,
+    body: { authorizationId: string; idempotencyKey: string },
+    principal: Principal,
+  ): Promise<PurchaseOutcomeResponse> {
+    return requestAllowingRefusal(`/v1/sessions/${encodeURIComponent(sessionId)}/capture`, {
+      method: 'POST',
+      body,
+      principal,
+    });
+  },
+
+  /** The whole story of a session, assembled server-side. */
+  timeline(
+    sessionId: string,
+    principal: Principal,
+    signal?: AbortSignal,
+  ): Promise<AgentTimelineResponse> {
+    return request(`/v1/sessions/${encodeURIComponent(sessionId)}/timeline`, {
+      principal,
+      signal,
     });
   },
 

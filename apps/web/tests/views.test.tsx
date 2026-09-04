@@ -25,6 +25,8 @@ import { Queue } from '../src/views/Queue.js';
 import { ReleaseDetail } from '../src/views/ReleaseDetail.js';
 import { Evidence } from '../src/views/Evidence.js';
 import { SignIn } from '../src/views/SignIn.js';
+import { AgentStart } from '../src/views/AgentStart.js';
+import { isOperatorRoute, parseRoute } from '../src/lib/router.js';
 
 const OPERATOR = { name: 'operator_dev', key: 'k-operator' };
 
@@ -363,6 +365,60 @@ function agentContextBody(): AgentContextResponse {
     },
   };
 }
+
+describe('the buyer surface', () => {
+  it('leads with the boundary, not with the agent', async () => {
+    // A judge reading for ten seconds should come away with the architecture,
+    // not with "an AI bought something".
+    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    render(<AgentStart />);
+
+    expect(screen.getByText(/without giving it your money/i)).toBeInTheDocument();
+    expect(screen.getByText(/Deterministic\. The only path to the provider\./i)).toBeInTheDocument();
+    // The three outcomes are named up front, including the two refusals.
+    expect(screen.getByText(/Payment captured/i)).toBeInTheDocument();
+    expect(screen.getByText(/Capture refused/i)).toBeInTheDocument();
+    expect(screen.getByText(/Refused before it starts/i)).toBeInTheDocument();
+  });
+
+  it('says the delegation is not the agent\u2019s to choose', async () => {
+    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    render(<AgentStart />);
+    expect(screen.getByText(/The agent cannot set any of these/i)).toBeInTheDocument();
+  });
+
+  it('does not claim the scenarios are mock-ups', async () => {
+    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    render(<AgentStart />);
+    expect(screen.getByText(/runs the real API against Postgres/i)).toBeInTheDocument();
+  });
+});
+
+describe('routing', () => {
+  it('sends an unknown path to the buyer surface, not the operator queue', () => {
+    // The buyer experience is the default because it is the one that explains
+    // what the system is for.
+    expect(parseRoute('#/')).toEqual({ name: 'agent' });
+    expect(parseRoute('')).toEqual({ name: 'agent' });
+  });
+
+  it('strips the scenario query from a session id', () => {
+    // This was a real defect: the id carried `?s=drift` and the API correctly
+    // refused it as a malformed identifier.
+    expect(parseRoute('#/agent/sess_abc?s=drift')).toEqual({
+      name: 'agent-session',
+      sessionId: 'sess_abc',
+    });
+  });
+
+  it('keeps the operator routes behind the operator gate', () => {
+    expect(isOperatorRoute({ name: 'queue' })).toBe(true);
+    expect(isOperatorRoute({ name: 'release', releaseId: 'rel_1' })).toBe(true);
+    expect(isOperatorRoute({ name: 'evidence', chainId: 'auth_1' })).toBe(true);
+    expect(isOperatorRoute({ name: 'agent' })).toBe(false);
+    expect(isOperatorRoute({ name: 'agent-session', sessionId: 'sess_1' })).toBe(false);
+  });
+});
 
 describe('the agentic context panel', () => {
   it('shows the user intent, the server-priced cart and the session budget', async () => {

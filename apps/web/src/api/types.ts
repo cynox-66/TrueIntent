@@ -135,8 +135,134 @@ export interface ReviewResolutionResponse {
   readonly [key: string]: unknown;
 }
 
+// ---- the buyer surface ----------------------------------------------------
+
+/**
+ * What the trusted application sends to delegate a session.
+ *
+ * The bounds are the user's, not the agent's: an agent that could state these
+ * would be choosing its own budget. This request carries the issuer key, which
+ * lives on this application and is never handed to the agent loop.
+ */
+export interface CreateSessionRequest {
+  readonly userId: string;
+  readonly purpose: string;
+  readonly bounds: {
+    readonly currency: string;
+    readonly totalBudget: { currency: string; amountMinor: number };
+    readonly maxPerPurchase: { currency: string; amountMinor: number };
+    readonly merchants: { mode: 'ANY' } | { mode: 'ALLOWLIST'; merchantIds: readonly string[] };
+    readonly allowedCategories: readonly string[];
+    readonly forbiddenCategories: readonly string[];
+    readonly itemsPerPurchase: { min: number; max: number };
+    readonly recurrence: 'ONE_TIME_ONLY' | 'RECURRING_ALLOWED';
+    readonly expiresAt: string;
+  };
+}
+
+/**
+ * What the dev demo route hands back.
+ *
+ * A session id and the principal to act as. Deliberately not a credential: the
+ * issuer key that created the session stays on the server.
+ */
+export interface DemoSessionResponse {
+  readonly sessionId: string;
+  readonly principal: { readonly userId: string; readonly sessionId: string };
+  readonly merchantId: string;
+  readonly purpose: string;
+  readonly bounds: {
+    readonly currency: string;
+    readonly totalBudget: { currency: string; amountMinor: number };
+    readonly maxPerPurchase: { currency: string; amountMinor: number };
+    readonly allowedCategories: readonly string[];
+  };
+}
+
+/** One turn of the agent loop, and what the server did about it. */
+export interface AgentStepView {
+  readonly index: number;
+  readonly action: { readonly action: string; readonly [key: string]: unknown } | null;
+  readonly accepted: boolean;
+  readonly refusedWith: string | null;
+  readonly detail: string;
+}
+
+/** A candidate the agent saw. The price is indicative, and named so. */
+export interface AgentObservedProduct {
+  readonly sku: string;
+  readonly name: string;
+  readonly category: string;
+  readonly indicativeUnitPriceMinor: number;
+  readonly currency: string;
+  readonly available: boolean;
+  readonly availableStock: number;
+}
+
+export type AgentRunOutcomeView =
+  | {
+      readonly kind: 'PURCHASE_REQUESTED';
+      readonly cart: readonly { sku: string; quantity: number }[];
+      readonly reason: string;
+      readonly catalogVersion: string;
+    }
+  | { readonly kind: 'ABANDONED'; readonly reason: string }
+  | { readonly kind: 'FAILED'; readonly reasonCode: string; readonly detail: string };
+
+export interface AgentRunResponse {
+  readonly model: string;
+  readonly outcome: AgentRunOutcomeView;
+  readonly steps: readonly AgentStepView[];
+  readonly observed: readonly AgentObservedProduct[];
+}
+
+/**
+ * What an agent may say when asking to buy.
+ *
+ * There is no amount, no currency, no total and no verdict, and the server's
+ * schema is strict — so adding one is a 400 rather than a value ignored.
+ */
+export interface PurchaseRequestBody {
+  readonly merchantId: string;
+  readonly lines: readonly { sku: string; quantity: number }[];
+  readonly idempotencyKey: string;
+  readonly rationale: string;
+  readonly agentModel: string;
+  readonly agentSteps: number;
+  readonly agentRefusedSteps: number;
+  readonly catalogVersion: string;
+}
+
+/**
+ * CaptureLock's answer, or a refusal that never reached it.
+ *
+ * The two are distinguishable: a refusal before a mandate existed carries
+ * `error` and no verdict, while a gate decision carries a verdict and reason
+ * codes. Collapsing them would lose the difference between "the delegation said
+ * no" and "the kernel said no", which are different failures.
+ */
+export interface PurchaseOutcomeResponse {
+  readonly sessionId?: string;
+  readonly authorizationId?: string;
+  readonly snapshotId?: string;
+  readonly capsuleHash?: string;
+  readonly releaseId?: string | null;
+  readonly verdict?: 'ALLOW' | 'PAUSE' | 'DENY';
+  readonly reasonCodes?: readonly string[];
+  readonly state?: ReleaseState | null;
+  readonly moneyMoved?: boolean;
+  readonly replayedPurchase?: boolean;
+  readonly evidenceEnvelopeId?: string | null;
+  /** Present only when the request was refused before verification. */
+  readonly error?: string;
+  readonly message?: string;
+}
+
 export type {
   AgentContextCapsuleView,
   AgentContextResponse,
   AgentSessionView,
+  AgentTimelineGate,
+  AgentTimelinePurchase,
+  AgentTimelineResponse,
 } from '@capturelock/api-contracts';
