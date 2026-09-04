@@ -9,8 +9,15 @@
  * informing one.
  */
 
-import 'dotenv/config';
+import { config } from 'dotenv';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { E2E_SCENARIOS, runE2EScenario } from './scenarios-e2e.js';
+
+// Resolved from this file rather than the cwd: `pnpm scenario` runs with
+// cwd = apps/eval, where no .env exists, so `import 'dotenv/config'` silently
+// loaded nothing and every scenario ran in-memory regardless of DATABASE_URL.
+config({ path: join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '.env') });
 
 async function main(): Promise<void> {
   const wanted = process.argv[2];

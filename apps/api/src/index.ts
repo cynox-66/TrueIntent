@@ -1,5 +1,9 @@
-import 'dotenv/config';
+import { loadEnv } from './load-env.js';
 import { buildApplication } from './composition.js';
+
+// Before anything reads process.env. See load-env.ts for why this is not
+// `import 'dotenv/config'`.
+loadEnv();
 import { loadConfig } from './config.js';
 import { buildServer } from './server.js';
 import { seedDemoData } from './seed.js';

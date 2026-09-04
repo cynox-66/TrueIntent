@@ -62,6 +62,15 @@ reject the `UPDATE` outright.
 **A prompt-injected reviewer says "approve".** It cannot. The advisory layer's
 severity floor means its judgement can only ever lower the verdict.
 
+**The provider captures before our capture gate runs.** It cannot, because every
+order is created with `payment_capture: 0`. Razorpay's default comes from an
+account-level setting, and if that setting is auto-capture the payment goes
+`created → captured` at checkout, never passing through `authorized` — the
+capture gate would have nothing left to gate. Asserting manual capture per order
+keeps the authorize→capture split a property of the request rather than of a
+dashboard toggle. Found by live measurement in Phase 3; see
+[ADR-016](../decisions/ADR-016-live-capture-verification.md).
+
 ## 4. Separation of authority
 
 The kernel faithfully enforces whatever mandate it is given. Nothing it does

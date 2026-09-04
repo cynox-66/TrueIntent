@@ -92,7 +92,7 @@ export class FakePaymentProvider implements PaymentProvider {
   private readonly payments = new Map<string, ProviderPayment>();
   private readonly clock: () => Timestamp;
   private readonly rejectDuplicateReceipt: boolean;
-  private readonly lookupImmediatelyConsistent: boolean;
+  private lookupImmediatelyConsistent: boolean;
   /** Receipts written but not yet visible to a lookup, modelling index lag. */
   private readonly notYetIndexed = new Set<string>();
 
@@ -208,6 +208,11 @@ export class FakePaymentProvider implements PaymentProvider {
     this.notYetIndexed.clear();
   }
 
+  /** Test control: models the provider's read-after-write lag on receipt search. */
+  setLookupImmediatelyConsistent(value: boolean): void {
+    this.lookupImmediatelyConsistent = value;
+  }
+
   async capturePayment(request: CapturePaymentRequest): Promise<CaptureOutcome> {
     this.calls.push({ method: 'capturePayment', argument: request.paymentId });
     const fault = this.takeFault('capture');
@@ -218,7 +223,17 @@ export class FakePaymentProvider implements PaymentProvider {
 
     const payment = this.payments.get(request.paymentId);
     if (payment === undefined) {
-      return { kind: 'REJECTED', code: 'BAD_REQUEST_ERROR', description: 'payment not found' };
+      // INDETERMINATE, not REJECTED — matching what the live API actually does.
+      //
+      // Measured in Phase 3: capturing an unknown payment returns
+      //   HTTP 404 {"message":"no Route matched with those values"}
+      // with no Razorpay `error` envelope. That is the API gateway declining to
+      // route, which is indistinguishable from a renamed route or a wrongly
+      // built path — cases where the payments service may never have seen the
+      // request. The adapter therefore maps it to INDETERMINATE, and a fake
+      // that returned a confident REJECTED here would let tests exercise a
+      // path that cannot occur against the real provider. See ADR-016.
+      return { kind: 'INDETERMINATE', cause: 'UNKNOWN_5XX' };
     }
 
     // Only an authorized payment is capturable. Everything else is a 400, and

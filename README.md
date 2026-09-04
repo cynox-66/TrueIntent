@@ -103,7 +103,8 @@ pnpm eval           # baseline vs CaptureLock → reports/
 
 pnpm test           # 430 tests, offline, no Docker
 pnpm test:db        # 23 tests against real Postgres
-pnpm smoke:razorpay # opt-in, needs real rzp_test_ keys
+pnpm smoke:razorpay         # opt-in: live order semantics
+pnpm smoke:razorpay:capture # opt-in: live capture semantics (one browser step)
 
 pnpm typecheck && pnpm lint && pnpm format:check && pnpm build
 ```

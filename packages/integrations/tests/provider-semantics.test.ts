@@ -137,6 +137,20 @@ describe('capture', () => {
     expect(provider.capturedCount()).toBe(1);
   });
 
+  it('treats an unknown payment as indeterminate, matching the live API', async () => {
+    // Measured against real Razorpay: capturing an unknown payment returns a
+    // gateway 404 with no error envelope, which cannot be distinguished from a
+    // routing problem. The fake mirrors that rather than being more confident
+    // than the provider it stands in for.
+    const provider = newProvider();
+    const outcome = await provider.capturePayment({
+      paymentId: 'pay_never_existed',
+      amount: inr(100),
+    });
+    expect(outcome.kind).toBe('INDETERMINATE');
+    expect(provider.capturedCount()).toBe(0);
+  });
+
   it('refuses a payment that is not in the authorized state', async () => {
     const provider = newProvider();
     provider.seedPayment({

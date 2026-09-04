@@ -291,6 +291,185 @@ describe('transaction boundaries', () => {
   });
 });
 
+describe('regression: an eventually-consistent empty lookup is not absence', () => {
+  /**
+   * The exact Phase 2 bug, pinned against Postgres.
+   *
+   * Razorpay's `GET /v1/orders?receipt=` is eventually consistent — measured
+   * live at roughly eight seconds. Reconciliation used to read an empty result
+   * as ORDER_RECONCILED_ABSENT and mark the release FAILED, which against the
+   * real API marks a *real* order failed and invites a duplicate order for the
+   * same purchase.
+   *
+   * The fake models the lag directly, so this exercises the hazard rather than
+   * describing it.
+   */
+  it('leaves the release indeterminate while the provider index is still catching up', async () => {
+    const s = await Stack.create({ databaseUrl: CONNECTION });
+    try {
+      const auth = await s.setup();
+      const snapshot = await s.quote(auth);
+      if (typeof snapshot !== 'string') throw new Error('quote failed');
+
+      // The order IS created at the provider, but its response is lost and the
+      // receipt index has not caught up — exactly the live behaviour.
+      s.provider.setLookupImmediatelyConsistent(false);
+      s.provider.failNextOrderWith('TIMEOUT_AFTER_APPLY');
+
+      const order = await s.releases.requestOrderCreation({
+        authorizationId: auth as never,
+        snapshotId: snapshot as never,
+        idempotencyKey: s.key('lag'),
+        principal: s.principal(),
+      });
+      expect(order.state).toBe('ORDER_INDETERMINATE');
+      expect(s.provider.orderCount()).toBe(1); // the order really does exist
+
+      const early = await s.reconciliation.reconcileById(order.releaseId as never);
+      expect(early?.after).toBe('ORDER_INDETERMINATE');
+      expect(early?.resolvedBy).toBe('NOT_RESOLVED');
+
+      // Durably still recoverable, not FAILED.
+      const rows = await admin.query<{ state: string }>(
+        'SELECT state FROM releases WHERE release_id = $1',
+        [order.releaseId],
+      );
+      expect(rows[0]?.state).toBe('ORDER_INDETERMINATE');
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('resolves to the real order once the index catches up', async () => {
+    const s = await Stack.create({ databaseUrl: CONNECTION });
+    try {
+      const auth = await s.setup();
+      const snapshot = await s.quote(auth);
+      if (typeof snapshot !== 'string') throw new Error('quote failed');
+
+      s.provider.setLookupImmediatelyConsistent(false);
+      s.provider.failNextOrderWith('TIMEOUT_AFTER_APPLY');
+      const order = await s.releases.requestOrderCreation({
+        authorizationId: auth as never,
+        snapshotId: snapshot as never,
+        idempotencyKey: s.key('lag2'),
+        principal: s.principal(),
+      });
+
+      s.provider.indexPendingReceipts();
+      const resolved = await s.reconciliation.reconcileById(order.releaseId as never);
+
+      expect(resolved?.after).toBe('ORDER_CREATED');
+      expect(resolved?.resolvedBy).toBe('ORDER_LOOKUP');
+      // Recovery is a lookup. It never creates a second order.
+      expect(s.provider.orderCount()).toBe(1);
+      expect(s.provider.callCount('createOrder')).toBe(1);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
+describe('the capture lifecycle under Postgres', () => {
+  it('records a captured release, its evidence, and a valid chain', async () => {
+    const s = await Stack.create({ databaseUrl: CONNECTION });
+    try {
+      const { auth, releaseId } = await openOrder(s);
+      await s.simulatePayerAuthorization(releaseId);
+      const capture = await s.releases.requestCapture({
+        releaseId: releaseId as never,
+        idempotencyKey: s.key('cap'),
+        principal: s.principal(),
+      });
+      expect(capture.state).toBe('CAPTURED');
+
+      const envelopes = await admin.query<{ kind: string; payload: { gate?: string } }>(
+        `SELECT kind, payload FROM evidence_envelopes WHERE chain_id = $1 ORDER BY sequence`,
+        [auth],
+      );
+      // The capture gate produced both a decision and a provider outcome.
+      const captureDecisions = envelopes.filter(
+        e => e.kind === 'DECISION' && e.payload.gate === 'CAPTURE',
+      );
+      const captureOutcomes = envelopes.filter(
+        e => e.kind === 'PROVIDER_OUTCOME' && e.payload.gate === 'CAPTURE',
+      );
+      expect(captureDecisions).toHaveLength(1);
+      expect(captureOutcomes).toHaveLength(1);
+      expect(await s.chainValid(auth)).toBe(true);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('maps an already-captured provider response to CAPTURED, not to a failure', async () => {
+    // The response that means "the money moved" must never be recorded as a
+    // loss. Against the real API this is a 400, which is exactly why it is easy
+    // to get wrong.
+    const s = await Stack.create({ databaseUrl: CONNECTION });
+    try {
+      const { releaseId } = await openOrder(s);
+      const paymentId = await s.simulatePayerAuthorization(releaseId);
+
+      // Capture out of band, so our own capture meets an already-captured payment.
+      await s.provider.capturePayment({
+        paymentId,
+        amount: (await s.deps.releases.findById(releaseId as never))!.amount,
+      });
+
+      const capture = await s.releases.requestCapture({
+        releaseId: releaseId as never,
+        idempotencyKey: s.key('cap'),
+        principal: s.principal(),
+      });
+
+      expect(capture.state).toBe('CAPTURED');
+      expect(capture.moneyMoved).toBe(true);
+      expect(s.provider.capturedCount()).toBe(1);
+
+      const rows = await admin.query<{ state: string; last_reason_codes: string[] }>(
+        'SELECT state, last_reason_codes FROM releases WHERE release_id = $1',
+        [releaseId],
+      );
+      expect(rows[0]?.state).toBe('CAPTURED');
+      expect(rows[0]?.last_reason_codes).toContain('IDEMPOTENT_REPLAY');
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('leaves an indeterminate capture recoverable rather than failed', async () => {
+    const s = await Stack.create({ databaseUrl: CONNECTION });
+    try {
+      const { releaseId } = await openOrder(s);
+      await s.simulatePayerAuthorization(releaseId);
+      s.provider.failNextCaptureWith('TIMEOUT_AFTER_APPLY');
+
+      const capture = await s.releases.requestCapture({
+        releaseId: releaseId as never,
+        idempotencyKey: s.key('cap'),
+        principal: s.principal(),
+      });
+      expect(capture.state).toBe('CAPTURE_INDETERMINATE');
+      // We do not yet know, so we do not claim.
+      expect(capture.moneyMoved).toBe(false);
+
+      const rows = await admin.query<{ state: string; in_flight_since: Date | null }>(
+        'SELECT state, in_flight_since FROM releases WHERE release_id = $1',
+        [releaseId],
+      );
+      expect(rows[0]?.state).toBe('CAPTURE_INDETERMINATE');
+      expect(rows[0]?.in_flight_since).not.toBeNull();
+
+      const resolved = await s.reconciliation.reconcileById(releaseId as never);
+      expect(resolved?.after).toBe('CAPTURED');
+      expect(s.provider.callCount('capturePayment')).toBe(1);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
 describe('recovery after a crash', () => {
   it('reconciles an indeterminate capture by asking the provider, never by retrying', async () => {
     const s = await stack();

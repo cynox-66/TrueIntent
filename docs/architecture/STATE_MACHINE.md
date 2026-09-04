@@ -156,6 +156,22 @@ what is now true rather than forcing its own transition through.
 | `REVIEW_REJECTED`                 | PAUSED                                            | ABORTED               | terminal                            |
 | `ABORT`                           | DRAFT, VERIFYING, VERIFIED, ORDER_CREATED, PAUSED | ABORTED               | only before money can move          |
 
+### 5.1 Why `PAYMENT_AUTHORIZED` is reachable at all
+
+Every order is created with `payment_capture: 0`.
+
+Razorpay's default for that field comes from an **account-level setting**. If
+that setting is auto-capture — a common default — a payment moves
+`created → captured` the moment the payer completes checkout, and never passes
+through `authorized`. The whole right-hand side of this machine would then be
+unreachable: the capture gate would have nothing left to gate, because the
+provider had already moved the money before the second verification ran.
+
+So manual capture is asserted per order rather than inherited. A property the
+architecture depends on should not be a dashboard toggle someone can flip
+without touching this repository. Found by live measurement; see
+[ADR-016](../decisions/ADR-016-live-capture-verification.md).
+
 ## 6. Two kinds of stuck, and two sweeps
 
 A release can be stuck for two quite different reasons, and conflating them

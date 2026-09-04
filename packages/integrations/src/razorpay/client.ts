@@ -93,6 +93,22 @@ export class RazorpayTestClient implements PaymentProvider {
       currency: request.amount.currency,
       receipt: request.receipt,
       notes: request.notes,
+      // Manual capture, stated explicitly rather than inherited.
+      //
+      // Razorpay's `payment_capture` defaults to an ACCOUNT-LEVEL setting. If
+      // that setting is auto-capture — which is the common default — a payment
+      // goes straight from `created` to `captured` when the payer completes
+      // checkout, never passing through `authorized`.
+      //
+      // For CaptureLock that is not a tuning detail, it is an architectural
+      // bypass: the capture gate would have nothing left to gate, because the
+      // provider already moved the money before our second verification ran.
+      // The entire two-gate design depends on the authorize→capture split, so
+      // it must be asserted per order and never left to a dashboard toggle
+      // someone might flip. Verified against the live test API: the Orders API
+      // rejects unknown fields with `extra_field_sent`, and accepts this one,
+      // so the parameter is genuinely recognised. See ADR-016.
+      payment_capture: 0,
     });
 
     if (response.kind === 'INDETERMINATE') {
@@ -211,7 +227,25 @@ export class RazorpayTestClient implements PaymentProvider {
 
     if (!response.ok) {
       const envelope = parsed as { error?: RazorpayError };
-      return { kind: 'ERROR', status: response.status, error: envelope.error ?? {} };
+
+      // A 4xx WITHOUT Razorpay's `error` envelope did not come from Razorpay's
+      // business logic — it is the API gateway declining to route. Measured
+      // live: capturing a non-existent payment returns
+      //   HTTP 404 {"message":"no Route matched with those values"}
+      // with no `error` object at all.
+      //
+      // The same response would appear if the route were renamed, if the path
+      // were built wrongly, or if the gateway were misconfigured — in which
+      // case the payments service never saw the request, and equally may have.
+      // We cannot tell from the response, and `CAPTURE_REJECTED` is terminal.
+      // Treating an unroutable request as a definitive refusal would terminally
+      // reject releases whose payments are fine. Uncertainty stays uncertainty.
+      // See ADR-016.
+      if (envelope.error === undefined) {
+        return { kind: 'INDETERMINATE', cause: 'UNKNOWN_5XX' };
+      }
+
+      return { kind: 'ERROR', status: response.status, error: envelope.error };
     }
 
     return { kind: 'OK', body: parsed };

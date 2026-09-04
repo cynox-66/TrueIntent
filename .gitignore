@@ -39,3 +39,8 @@ vitest.results.json
 
 # Generated evaluation output
 reports/
+
+# Live-verification screenshots. Browser captures of hosted checkout, which
+# routinely include the payer's phone number and the operator's own browser
+# chrome. Kept locally as evidence; never committed.
+screenshots/
