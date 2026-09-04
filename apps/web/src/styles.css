@@ -1814,3 +1814,89 @@ table.grid tr:last-child td {
   font-size: 0.75rem;
 }
 
+/* ----------------------------------------------- authority versus reality -- */
+/*
+ * Two questions, two colours, held apart everywhere they appear. Authority is
+ * answered from the delegation alone; reality needs a fresh read of the
+ * merchant. Collapsing them into one "verified" badge would hide the fact that
+ * the second one is the hard part.
+ */
+
+.two-questions {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  margin: 1.5rem 0;
+}
+
+.two-questions-item {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.two-questions-tag {
+  align-self: flex-start;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.45rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.two-questions-tag.is-authority,
+.scenario-check.is-authority {
+  border-color: var(--attention);
+  color: var(--attention);
+}
+
+.two-questions-tag.is-reality,
+.scenario-check.is-reality {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.scenario-check.is-both {
+  border-color: var(--safe);
+  color: var(--safe);
+}
+
+.two-questions-text {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.two-questions-text strong {
+  color: var(--text);
+  display: block;
+  font-weight: 600;
+}
+
+.scenario-check {
+  align-self: flex-start;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.4rem;
+  text-transform: uppercase;
+}
+
+.scenario-question {
+  color: var(--text-dim);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+.fixture-note {
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  margin: 2.5rem 0 0;
+  padding-left: 0.9rem;
+}

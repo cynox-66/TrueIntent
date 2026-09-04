@@ -34,9 +34,20 @@ interface DemoSessionResponse {
   };
 }
 
+/**
+ * The three scenarios, each labelled with the question it answers.
+ *
+ * The two refusals are different checks, and saying so is the point. Authority
+ * asks whether the purchase was ever allowed, and needs to know nothing about
+ * the merchant. Reality asks whether it is still true, and can only be answered
+ * by reading the merchant again. A single "security check" badge over both
+ * would make the system look like one rule doing double duty.
+ */
 const SCENARIOS: readonly {
   id: ScenarioId;
   label: string;
+  question: string;
+  check: 'BOTH' | 'AUTHORITY' | 'REALITY';
   outcome: string;
   tone: 'safe' | 'danger' | 'attention';
   blurb: string;
@@ -44,26 +55,32 @@ const SCENARIOS: readonly {
   {
     id: 'happy',
     label: 'Everything checks out',
+    question: 'Both questions answered yes',
+    check: 'BOTH',
     outcome: 'Payment captured',
     tone: 'safe',
     blurb:
-      'The agent finds a dinner inside your budget, CaptureLock verifies it twice, and the payment goes through.',
+      'The agent finds a dinner inside your budget, CaptureLock verifies it twice — once when the order is placed, once again before the money moves — and the payment goes through.',
   },
   {
     id: 'drift',
     label: 'The restaurant reprices mid-payment',
+    question: 'Is this purchase still true?',
+    check: 'REALITY',
     outcome: 'Capture refused · ₹0 moved',
     tone: 'danger',
     blurb:
-      'Verified at ₹4,949. The restaurant changes it to ₹5,499 before the money moves. CaptureLock re-reads reality at the last moment and refuses.',
+      'Verified at ₹4,949 and authorized by Razorpay. The restaurant changes it to ₹5,499 before the money moves. CaptureLock re-reads the menu at the last instant and refuses.',
   },
   {
     id: 'overreach',
     label: 'The agent reaches past its budget',
+    question: 'Was this purchase ever allowed?',
+    check: 'AUTHORITY',
     outcome: 'Refused before it starts',
     tone: 'attention',
     blurb:
-      'The agent tries to book the ₹6,649 tasting menu. Your delegation says ₹5,000, so no mandate is ever created — reality never enters into it.',
+      'The agent tries to book the ₹6,649 tasting menu. Your delegation says ₹5,000, so no mandate is created and the restaurant is never consulted — reality never enters into it.',
   },
 ];
 
@@ -177,6 +194,27 @@ export function AgentStart(): ReactNode {
           Each runs the real API against Postgres. Nothing below is a mock-up of a result.
         </p>
 
+        {/*
+          Named once, before the cards, so the two refusals read as two
+          different checks rather than as the system saying no twice.
+        */}
+        <div className="two-questions">
+          <div className="two-questions-item">
+            <span className="two-questions-tag is-authority">Authority</span>
+            <span className="two-questions-text">
+              <strong>Was this purchase ever allowed?</strong> Answered from what you delegated.
+              Needs to know nothing about the merchant.
+            </span>
+          </div>
+          <div className="two-questions-item">
+            <span className="two-questions-tag is-reality">Reality</span>
+            <span className="two-questions-text">
+              <strong>Is this purchase still true?</strong> Answered by reading the merchant again,
+              at the instant money would move.
+            </span>
+          </div>
+        </div>
+
         <div className="scenario-grid">
           {SCENARIOS.map(scenario => (
             <button
@@ -188,7 +226,11 @@ export function AgentStart(): ReactNode {
               }}
               disabled={starting !== null}
             >
+              <span className={`scenario-check is-${scenario.check.toLowerCase()}`}>
+                {scenario.check === 'BOTH' ? 'Authority + Reality' : scenario.check}
+              </span>
               <span className="scenario-label">{scenario.label}</span>
+              <span className="scenario-question">{scenario.question}</span>
               <span className="scenario-blurb">{scenario.blurb}</span>
               <span className="scenario-outcome">
                 {starting === scenario.id ? 'Starting…' : scenario.outcome}
@@ -203,6 +245,12 @@ export function AgentStart(): ReactNode {
           </div>
         )}
       </section>
+
+      <p className="fixture-note">
+        Demo merchant fixture — the verification boundary is provider-independent. The gate reads
+        the merchant through the same port a live connector would implement, so what changes for a
+        real merchant is the connector, not the check.
+      </p>
 
       <section className="landing-foot">
         <p>

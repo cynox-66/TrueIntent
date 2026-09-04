@@ -374,7 +374,9 @@ describe('the buyer surface', () => {
     render(<AgentStart />);
 
     expect(screen.getByText(/without giving it your money/i)).toBeInTheDocument();
-    expect(screen.getByText(/Deterministic\. The only path to the provider\./i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Deterministic\. The only path to the provider\./i),
+    ).toBeInTheDocument();
     // The three outcomes are named up front, including the two refusals.
     expect(screen.getByText(/Payment captured/i)).toBeInTheDocument();
     expect(screen.getByText(/Capture refused/i)).toBeInTheDocument();
@@ -391,6 +393,26 @@ describe('the buyer surface', () => {
     route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
     render(<AgentStart />);
     expect(screen.getByText(/runs the real API against Postgres/i)).toBeInTheDocument();
+  });
+});
+
+describe('the two questions the buyer surface asks', () => {
+  it('holds authority and reality apart as two questions', async () => {
+    // Collapsing them into one "security check" would make the system look
+    // like one rule doing double duty.
+    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    render(<AgentStart />);
+
+    // Each question appears twice by design: once where the two checks are
+    // named, and again on the card that demonstrates it.
+    expect(screen.getAllByText(/Was this purchase ever allowed\?/i)).toHaveLength(2);
+    expect(screen.getAllByText(/Is this purchase still true\?/i)).toHaveLength(2);
+  });
+
+  it('admits the merchant is a fixture', async () => {
+    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    render(<AgentStart />);
+    expect(screen.getByText(/Demo merchant fixture/i)).toBeInTheDocument();
   });
 });
 
