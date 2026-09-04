@@ -94,6 +94,18 @@ export {
 export { QuoteService, type QuoteRequest, type QuoteResult } from './services/quote-service.js';
 
 export {
+  CommerceSessionService,
+  DEFAULT_SETTLE_AFTER_SECONDS,
+  type CommerceSessionDependencies,
+  type CreateSessionRequest,
+  type CreateSessionResult,
+  type PurchaseAccepted,
+  type PurchaseRefused,
+  type PurchaseRequest,
+  type PurchaseResult,
+} from './services/commerce-session-service.js';
+
+export {
   AuthorizationService,
   type CreateAuthorizationRequest,
   type CreateAuthorizationResult,

@@ -205,6 +205,17 @@ export {
 } from './domain/live-state.js';
 
 export {
+  CONTEXT_CAPSULE_VERSION,
+  MAX_SELECTION_RATIONALE,
+  capsuleHashInput,
+  computeCapsuleHash,
+  verifyCapsuleIntegrity,
+  type CapsuleAgentDecision,
+  type CapsuleLine,
+  type ContextCapsule,
+} from './domain/context-capsule.js';
+
+export {
   PurchaseSettlementStateSchema,
   SessionAuthorityStateSchema,
   SessionBoundsSchema,

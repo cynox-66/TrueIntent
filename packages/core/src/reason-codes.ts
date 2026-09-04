@@ -348,6 +348,32 @@ export const REASON_CODE_DEFINITIONS = {
   ),
 
   // ------------------------------------------------------------------- session
+  //
+  // The delegated-authority layer above a single mandate. These refuse a
+  // purchase *request* before an authorization exists, so none of them can
+  // reach the kernel: a session failure means no mandate was ever minted, which
+  // is why they are refusals rather than findings.
+  SESSION_NOT_FOUND: def('SESSION', 'DENY', 'No commerce session exists for the given id.'),
+  SESSION_EXPIRED: def('SESSION', 'DENY', 'The commerce session validity window has passed.'),
+  SESSION_REVOKED: def('SESSION', 'DENY', 'The commerce session was revoked by the user.'),
+  SESSION_NOT_OWNED: def(
+    'SESSION',
+    'DENY',
+    'The requesting principal does not own this commerce session.',
+  ),
+  SESSION_BOUNDS_HASH_MISMATCH: def(
+    'SESSION',
+    'DENY',
+    'The stored session bounds do not hash to the value recorded at delegation; the session was altered.',
+  ),
+  SESSION_BUDGET_EXCEEDED: def(
+    'SESSION',
+    'DENY',
+    // The check a per-transaction ceiling structurally cannot make: each
+    // purchase is individually within its cap, and together they exceed what
+    // the user delegated.
+    'The purchase would exceed the budget remaining on the session, counting purchases already made.',
+  ),
   SESSION_PURCHASE_NOT_PERMITTED: def(
     'SESSION',
     'DENY',

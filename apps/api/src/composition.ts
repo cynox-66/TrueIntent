@@ -20,11 +20,13 @@
 import {
   systemClock,
   type Clock,
+  type MerchantCatalogProvider,
   type MerchantStateProvider,
   type PaymentProvider,
 } from '@capturelock/core';
 import {
   AuthorizationService,
+  CommerceSessionService,
   GuardedPaymentExecutor,
   QuoteService,
   ReconciliationService,
@@ -82,6 +84,23 @@ export interface Application {
   readonly webhookService: WebhookService;
   readonly reconciliationService: ReconciliationService;
   readonly reviewService: ReviewService;
+  /**
+   * The agent-facing commerce layer.
+   *
+   * Holds issuer authority server-side so an agent never does, and reaches the
+   * provider only through the release service's guarded executor. It receives
+   * `PaymentDependencies` for that reason and no other — it mints no grant and
+   * calls no provider itself.
+   */
+  readonly commerceSessionService: CommerceSessionService;
+  /**
+   * The buyer agent's view of the catalogue.
+   *
+   * The same instance the kernel reads live state from, exposed through its
+   * browse interface. Two views of one store, which is what makes drift between
+   * "what the agent saw" and "what the gate re-reads" genuine.
+   */
+  readonly productCatalog: MerchantCatalogProvider;
   readonly idempotency: IdempotencyStore;
   readonly evidenceVerifier: EvidenceVerifier;
   readonly evidencePublicKey: string;
@@ -320,6 +339,10 @@ export function buildApplication(config: AppConfig): Application {
     releaseService: new ReleaseService(withPayments),
     // Reads provider state; structurally cannot capture.
     reconciliationService: new ReconciliationService({ ...core, paymentReader }),
+    // Composed from the release service, so the agentic layer inherits every
+    // check the two gates already make and cannot route around one.
+    commerceSessionService: new CommerceSessionService(withPayments),
+    productCatalog: catalog,
     // No provider reference of any kind.
     authorizationService: new AuthorizationService(core),
     quoteService: new QuoteService(core),
