@@ -778,6 +778,10 @@ describe('the evidence timeline', () => {
  * spend ceiling is a PAUSE, and lets gate 1 reach that verdict on its own. The
  * review record the queue then displays is the one `ReleaseService` created.
  */
+let lastPausedAuthorizationId = '';
+let lastPausedSnapshotId = '';
+let lastPausedIdempotencyKey = '';
+
 async function pauseSomeRelease(): Promise<string> {
   await app.deps.policies.insert({
     policyId: 'pause_on_spend',
@@ -812,13 +816,92 @@ async function pauseSomeRelease(): Promise<string> {
     .authorizationId;
 
   const snapshotId = await createQuote(authorizationId);
+  const idempotencyKey = `idem-pause-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
   const release = await server.inject({
     method: 'POST',
     url: '/v1/releases',
     headers: PRINCIPAL,
-    payload: { authorizationId, snapshotId, idempotencyKey: `idem-pause-${Date.now()}` },
+    payload: { authorizationId, snapshotId, idempotencyKey },
   });
   const body = JSON.parse(release.body) as { verdict: string; releaseId: string };
   expect(body.verdict).toBe('PAUSE');
+
+  // Recorded so a test can replay the agent's *identical* request after the
+  // operator resolves, which is the path the defect lived on.
+  lastPausedAuthorizationId = authorizationId;
+  lastPausedSnapshotId = snapshotId;
+  lastPausedIdempotencyKey = idempotencyKey;
   return body.releaseId;
 }
+
+describe('approving a release paused at the order gate lets it proceed', () => {
+  /**
+   * The defect this pins was reachable end to end.
+   *
+   * `REVIEW_APPROVED` sent every paused release to `CAPTURE_VERIFYING`. For a
+   * release paused at gate 1 there is no order and therefore no payment, so the
+   * capture gate refused with `INVALID_RELEASE_STATE_FOR_GATE` and the release
+   * was DENIED — an operator's approval produced a permanent denial, and the
+   * order was never created.
+   */
+  it('creates the order after the operator approves', async () => {
+    const releaseId = await pauseSomeRelease();
+
+    const queue = JSON.parse(
+      (await server.inject({ method: 'GET', url: '/v1/operator/queue', headers: OPERATOR })).body,
+    ) as { items: { releaseId: string; review: { reviewId: string } | null }[] };
+    const reviewId = queue.items.find(i => i.releaseId === releaseId)?.review?.reviewId;
+    expect(reviewId).toBeDefined();
+
+    const resolved = await server.inject({
+      method: 'POST',
+      url: `/v1/reviews/${reviewId!}/resolve`,
+      headers: OPERATOR,
+      payload: { resolution: 'APPROVED' },
+    });
+    expect(resolved.statusCode).toBe(200);
+    // Back to the ORDER gate, not the capture gate.
+    expect(JSON.parse(resolved.body)).toMatchObject({ state: 'VERIFYING' });
+
+    // The agent retries the same request. Previously this replayed the stored
+    // PAUSE — the very answer the operator had just overruled.
+    const retried = await server.inject({
+      method: 'POST',
+      url: '/v1/releases',
+      headers: PRINCIPAL,
+      payload: {
+        authorizationId: lastPausedAuthorizationId,
+        snapshotId: lastPausedSnapshotId,
+        idempotencyKey: lastPausedIdempotencyKey,
+      },
+    });
+    const body = JSON.parse(retried.body) as {
+      verdict: string;
+      state: string;
+      providerOrderId: string | null;
+      moneyMoved: boolean;
+    };
+
+    expect(body.verdict).toBe('ALLOW');
+    expect(body.state).toBe('ORDER_CREATED');
+    expect(body.providerOrderId).not.toBeNull();
+    // Gate 1 creates the payable order and nothing more.
+    expect(body.moneyMoved).toBe(false);
+  });
+
+  it('rejecting still aborts the release', async () => {
+    const releaseId = await pauseSomeRelease();
+    const queue = JSON.parse(
+      (await server.inject({ method: 'GET', url: '/v1/operator/queue', headers: OPERATOR })).body,
+    ) as { items: { releaseId: string; review: { reviewId: string } | null }[] };
+    const reviewId = queue.items.find(i => i.releaseId === releaseId)!.review!.reviewId;
+
+    const resolved = await server.inject({
+      method: 'POST',
+      url: `/v1/reviews/${reviewId}/resolve`,
+      headers: OPERATOR,
+      payload: { resolution: 'REJECTED' },
+    });
+    expect(JSON.parse(resolved.body)).toMatchObject({ state: 'ABORTED' });
+  });
+});

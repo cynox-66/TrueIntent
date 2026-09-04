@@ -129,8 +129,21 @@ export class ReleaseService {
     // A repeat of the same request returns the stored answer without touching
     // the provider. A repeat with a *different* payload is not short-circuited:
     // it falls through so the kernel refuses it with the right reason code.
+    //
+    // `VERIFYING` is excluded, and that exclusion is load-bearing. It is where
+    // an operator's approval of a gate-1 pause puts the release, and replaying
+    // the stored PAUSE there would hand back the very answer the operator just
+    // overruled — the approval would be unactionable and the order would never
+    // be created. A release in `VERIFYING` has no concluded answer to replay,
+    // so re-evaluating is not a weakening of idempotency but the absence of
+    // anything to be idempotent about. Concurrency is still handled below by
+    // the compare-and-set transitions, not by this branch.
     const stored = await this.deps.releases.findByClientIdempotencyKey(request.idempotencyKey);
-    if (stored !== null && stored.requestFingerprint === fingerprint) {
+    if (
+      stored !== null &&
+      stored.requestFingerprint === fingerprint &&
+      stored.state !== 'VERIFYING'
+    ) {
       return this.replay(stored);
     }
 

@@ -365,6 +365,17 @@ export class InMemoryReviewRepository implements ReviewRepository {
     return null;
   }
 
+  async findLatestApprovedByRelease(id: ReleaseId): Promise<ReviewRecord | null> {
+    const approved = [...this.rows.values()]
+      .filter(row => row.releaseId === id && row.state === 'APPROVED' && row.resolvedAt !== null)
+      .sort(
+        (a, b) =>
+          timestampToEpochMillis(b.resolvedAt!) - timestampToEpochMillis(a.resolvedAt!) ||
+          b.reviewId.localeCompare(a.reviewId),
+      );
+    return approved[0] ?? null;
+  }
+
   async listOpen(limit: number): Promise<readonly ReviewRecord[]> {
     return [...this.rows.values()]
       .filter(row => row.state === 'OPEN')

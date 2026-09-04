@@ -298,6 +298,62 @@ describe('listOpen against Postgres', () => {
     expect(listed.map(r => r.reviewId)).toEqual([open]);
   });
 
+  it('returns the latest approval, which the kernel consumes', async () => {
+    // The kernel reads this to clear the pause findings a human accepted. If it
+    // returned the wrong review — or an unresolved one — an approval would
+    // either not apply or would apply the wrong reason codes.
+    const release = await put('PAUSED', AT, 'a');
+    const older = newReviewId();
+    const newer = newReviewId();
+
+    const base = {
+      releaseId: release.releaseId,
+      authorizationId: release.authorizationId,
+      snapshotHash: hash('capturelock.v1.snapshot', { r: release.releaseId }),
+      reasonCodes: ['TOTAL_EXCEEDS_LIMIT'],
+      state: 'OPEN' as const,
+      createdAt: AT,
+      resolvedAt: null,
+      resolvedBy: null,
+    };
+
+    await reviews.insert({ ...base, reviewId: older });
+    await reviews.resolve(older, 'APPROVED', 'operator_one', AT);
+    await reviews.insert({ ...base, reviewId: newer });
+    await reviews.resolve(
+      newer,
+      'APPROVED',
+      'operator_two',
+      asTimestamp('2026-09-03T12:00:00.000Z'),
+    );
+
+    const found = await reviews.findLatestApprovedByRelease(release.releaseId);
+    expect(found?.reviewId).toBe(newer);
+    expect(found?.resolvedBy).toBe('operator_two');
+  });
+
+  it('never returns an open or rejected review as an approval', async () => {
+    const release = await put('PAUSED', AT, 'a');
+    const rejected = newReviewId();
+    await reviews.insert({
+      reviewId: rejected,
+      releaseId: release.releaseId,
+      authorizationId: release.authorizationId,
+      snapshotHash: hash('capturelock.v1.snapshot', { n: 1 }),
+      reasonCodes: ['TOTAL_EXCEEDS_LIMIT'],
+      state: 'OPEN',
+      createdAt: AT,
+      resolvedAt: null,
+      resolvedBy: null,
+    });
+    // Still OPEN: not an approval.
+    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+
+    await reviews.resolve(rejected, 'REJECTED', 'operator_dev', AT);
+    // Rejected: emphatically not an approval.
+    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+  });
+
   it('orders oldest first and stays stable on identical timestamps', async () => {
     // One release per review: only one review may be open per release.
     for (let i = 0; i < 4; i += 1) {

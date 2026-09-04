@@ -395,6 +395,9 @@ export function buildScenario(overrides: ScenarioOverrides = {}): Scenario {
   const executionOverrides = overrides.execution ?? {};
   const execution: ExecutionContext = {
     requestFingerprint,
+    // No operator approval unless a test asks for one. A fixture that defaulted
+    // to an approval would quietly weaken every refusal test in the suite.
+    approvedReview: null,
     attemptsInWindow: 1,
     velocityWindowSeconds: 60,
     maxAttemptsInWindow: 3,

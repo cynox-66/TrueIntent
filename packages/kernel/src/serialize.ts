@@ -237,6 +237,19 @@ function encodeExecution(execution: ExecutionContext): Json {
     release: release(execution.release),
     releaseForIdempotencyKey: release(execution.releaseForIdempotencyKey),
     otherActiveRelease: release(execution.otherActiveRelease),
+    // Serialized so a replay of an approved decision reproduces it. Omitting
+    // this would make every operator-approved ALLOW fail its own replay check,
+    // which would look exactly like tampering.
+    approvedReview:
+      execution.approvedReview === null || execution.approvedReview === undefined
+        ? null
+        : {
+            reviewId: execution.approvedReview.reviewId,
+            boundTo: execution.approvedReview.boundTo,
+            reasonCodes: [...execution.approvedReview.reasonCodes],
+            resolvedBy: execution.approvedReview.resolvedBy,
+            resolvedAt: execution.approvedReview.resolvedAt,
+          },
     requestFingerprint: execution.requestFingerprint,
     attemptsInWindow: execution.attemptsInWindow,
     velocityWindowSeconds: execution.velocityWindowSeconds,
@@ -322,8 +335,21 @@ export function deserializeContext(serialized: unknown): VerificationContext {
     snapshot,
     proposal: root['proposal'] as unknown as ProposedCart,
     live: liveResult,
-    execution: root['execution'] as unknown as ExecutionContext,
+    // Normalized rather than cast straight through: envelopes recorded before
+    // approvals existed carry no `approvedReview`, and replaying one must
+    // reproduce its original decision rather than throw. Absent means "no
+    // approval was in play", which is exactly what those decisions assumed.
+    execution: normalizeExecution(root['execution']),
   };
 
   return deepFreeze(context);
+}
+
+/** Fills in fields added after an envelope was written. */
+function normalizeExecution(raw: unknown): ExecutionContext {
+  const execution = raw as ExecutionContext;
+  return {
+    ...execution,
+    approvedReview: execution.approvedReview ?? null,
+  };
 }

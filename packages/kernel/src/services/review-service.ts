@@ -42,7 +42,20 @@ export class ReviewService {
     const release = await this.deps.releases.findById(review.releaseId);
     if (release === null) return { kind: 'NOT_FOUND' };
 
-    const trigger = resolution === 'APPROVED' ? 'REVIEW_APPROVED' : 'REVIEW_REJECTED';
+    // Which gate paused this release decides where an approval returns it.
+    //
+    // A release that never created an order paused at gate 1, and sending it to
+    // CAPTURE_VERIFYING would strand it: the capture gate needs a provider
+    // payment, finds none, and refuses with INVALID_RELEASE_STATE_FOR_GATE — so
+    // an operator's approval would produce a permanent denial and the order
+    // would never be created. `providerOrderId` is the discriminator because it
+    // is set by the order gate itself and by nothing else.
+    const trigger =
+      resolution === 'REJECTED'
+        ? 'REVIEW_REJECTED'
+        : release.providerOrderId === null
+          ? 'REVIEW_APPROVED_AT_ORDER_GATE'
+          : 'REVIEW_APPROVED';
     const target = nextState(release.state, trigger);
     if (target === null) {
       return { kind: 'RELEASE_MOVED_ON', state: release.state };

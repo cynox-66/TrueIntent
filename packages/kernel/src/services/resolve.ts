@@ -21,6 +21,7 @@ import {
   type LiveStateResult,
   type ProposedCart,
   type ReleaseRecord,
+  type ReviewRecord,
   type Sha256Hex,
   type SnapshotId,
   type Timestamp,
@@ -28,7 +29,12 @@ import {
 } from '@capturelock/core';
 import { newRequestId } from '@capturelock/core';
 import type { PolicyDocument } from '@capturelock/policy';
-import { deepFreeze, type Principal, type VerificationContext } from '../context.js';
+import {
+  deepFreeze,
+  type ApprovedReview,
+  type Principal,
+  type VerificationContext,
+} from '../context.js';
 import type { CoreDependencies } from './dependencies.js';
 
 export interface ResolveInput {
@@ -111,6 +117,16 @@ export async function resolveContext(
     principal: input.principal,
   });
 
+  // The operator's decision, if one has been recorded for this release.
+  //
+  // Loaded here rather than inside a stage because everything asynchronous
+  // belongs on this side of the boundary; the kernel then applies it as
+  // arithmetic over a frozen value, which is what keeps replay reproducible.
+  const approvedReview: ApprovedReview | null =
+    input.release === null
+      ? null
+      : toApprovedReview(await deps.reviews.findLatestApprovedByRelease(input.release.releaseId));
+
   const context = deepFreeze<VerificationContext>({
     gate: input.gate,
     requestId: newRequestId(),
@@ -128,6 +144,7 @@ export async function resolveContext(
         otherActiveRelease !== null && otherActiveRelease.releaseId === input.release?.releaseId
           ? null
           : otherActiveRelease,
+      approvedReview,
       requestFingerprint: fingerprint,
       attemptsInWindow: (input.release?.attemptCount ?? 0) + 1,
       velocityWindowSeconds: deps.config.velocityWindowSeconds,
@@ -154,5 +171,24 @@ function emptyCart(): ProposedCart {
     declaredTotal: { currency: 'INR', amountMinor: 0 },
     recurring: false,
     shipTo: null,
+  };
+}
+
+/**
+ * Narrows a stored review to the four facts the kernel is allowed to use.
+ *
+ * An approval with no recorded approver or resolution time is not usable: the
+ * whole point is that a specific human accepted specific findings at a specific
+ * moment, and a record missing any of that cannot support the downgrade.
+ */
+function toApprovedReview(review: ReviewRecord | null): ApprovedReview | null {
+  if (review === null) return null;
+  if (review.resolvedBy === null || review.resolvedAt === null) return null;
+  return {
+    reviewId: review.reviewId,
+    boundTo: review.snapshotHash,
+    reasonCodes: review.reasonCodes,
+    resolvedBy: review.resolvedBy,
+    resolvedAt: review.resolvedAt,
   };
 }

@@ -522,6 +522,23 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     if (result.kind === 'ALREADY_RESOLVED') {
       return reply.status(409).send({ error: 'ALREADY_RESOLVED' });
     }
+
+    // The operator has just overruled a recorded answer, so the stored HTTP
+    // response for the request that produced it is no longer true.
+    //
+    // Without this the resolution is unactionable: the agent's retry is
+    // replayed from the idempotency record and never reaches the domain, so it
+    // receives the same PAUSE the operator just cleared — while a *different*
+    // key is refused with AUTHORIZATION_HAS_ACTIVE_RELEASE. Both routes closed
+    // meant an approved release could never proceed.
+    //
+    // Only the completed answer for this release's own request is discarded,
+    // and only after a resolution this request performed. Replay protection for
+    // every other key is untouched.
+    if (result.kind === 'RESOLVED') {
+      const release = await app.deps.releases.findById(asReleaseId(result.releaseId));
+      if (release !== null) await app.idempotency.forget(release.clientIdempotencyKey);
+    }
     return reply.send(result);
   });
 
@@ -558,6 +575,8 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
       payload: payload ?? null,
       providerEventAt: null,
       paymentId: entity.paymentId,
+      amountMinor: entity.amountMinor,
+      currency: entity.currency,
       orderId: entity.orderId,
     });
 
@@ -664,16 +683,29 @@ function statusForVerdict(verdict: string): number {
   return 422;
 }
 
+/**
+ * Reads the identifiers and the amount off a Razorpay payment entity.
+ *
+ * The amount is extracted so the webhook service can check that the payment
+ * really belongs to the release it addresses. Anything absent or of the wrong
+ * type becomes null and is simply not checked — a missing field is not evidence
+ * of a mismatch, and inventing one would refuse legitimate events.
+ */
 function readPaymentEntity(payload: Record<string, unknown> | undefined): {
   paymentId: string | null;
   orderId: string | null;
+  amountMinor: number | null;
+  currency: string | null;
 } {
   const container = payload?.['payload'] as Record<string, unknown> | undefined;
   const payment = (container?.['payment'] as Record<string, unknown> | undefined)?.['entity'] as
     Record<string, unknown> | undefined;
+  const amount = payment?.['amount'];
   return {
     paymentId: typeof payment?.['id'] === 'string' ? payment['id'] : null,
     orderId: typeof payment?.['order_id'] === 'string' ? payment['order_id'] : null,
+    amountMinor: typeof amount === 'number' && Number.isSafeInteger(amount) ? amount : null,
+    currency: typeof payment?.['currency'] === 'string' ? payment['currency'] : null,
   };
 }
 

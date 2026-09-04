@@ -26,6 +26,7 @@ import {
   type Finding,
   type Gate,
   type ReasonCode,
+  type Sha256Hex,
   type StageId,
   type StageReport,
   type Timestamp,
@@ -33,6 +34,7 @@ import {
   type Verdict,
 } from '@capturelock/core';
 import type { StageExecution } from './pipeline.js';
+import type { ApprovedReview } from './context.js';
 
 /**
  * Stages that must complete before any transaction may be approved.
@@ -43,10 +45,18 @@ import type { StageExecution } from './pipeline.js';
  */
 export const MANDATORY_STAGES: readonly StageId[] = STAGE_IDS;
 
+export interface CombineOptions {
+  /** The operator approval on file for this release, if any. */
+  readonly approval: ApprovedReview | null;
+  /** The fingerprint of the request being verified right now. */
+  readonly requestFingerprint: Sha256Hex | null;
+}
+
 export function combine(
   executions: readonly StageExecution[],
   gate: Gate,
   evaluatedAt: Timestamp,
+  options: CombineOptions = { approval: null, requestFingerprint: null },
 ): VerificationDecision {
   const findings: Finding[] = executions.flatMap(execution => [...execution.findings]);
 
@@ -91,14 +101,36 @@ export function combine(
   else if (highest === SEVERITY_RANK.PAUSE) verdict = 'PAUSE';
   else verdict = 'ALLOW';
 
-  const reasonCodes = dedupeCodes(ordered);
+  // A human already looked at this and said yes. Consuming that is the only
+  // thing that makes PAUSE different from DENY.
+  const approvalApplies = verdict === 'PAUSE' && approvalCovers(ordered, options);
+  if (approvalApplies) verdict = 'ALLOW';
+
+  const withApproval = approvalApplies
+    ? [
+        ...ordered,
+        finding(
+          'EXECUTION',
+          'REVIEW_APPROVAL_APPLIED',
+          `Operator ${options.approval!.resolvedBy} approved this exact cart, covering every pause finding.`,
+          {
+            reviewId: options.approval!.reviewId,
+            boundTo: options.approval!.boundTo,
+            approvedReasonCodes: options.approval!.reasonCodes.join(','),
+            resolvedAt: options.approval!.resolvedAt,
+          },
+        ),
+      ]
+    : ordered;
+
+  const reasonCodes = dedupeCodes(withApproval);
 
   // Record an explicit positive statement when nothing was found, so an
   // envelope never reads as "approved, no reasons given".
   const finalFindings =
     verdict === 'ALLOW'
       ? [
-          ...ordered,
+          ...withApproval,
           finding(
             'EXECUTION',
             'VERIFIED_MATCH',
@@ -123,6 +155,44 @@ export function combine(
     ),
     stages: Object.freeze(stages),
   });
+}
+
+/**
+ * Whether an approval covers everything that is currently pausing this release.
+ *
+ * Deliberately narrow, because this is the one place a refusal becomes an
+ * approval. Four conditions, and all of them must hold:
+ *
+ *  - **There is an approval.** Absent one, nothing is downgraded.
+ *  - **The request is the same.** The approval carries the fingerprint of what
+ *    the reviewer saw — authorization, snapshot and gate. A re-quote changes it,
+ *    and so does moving to the other gate, so an approval never travels to a
+ *    cart or a gate the human was not shown.
+ *  - **Every pause finding was one the reviewer saw.** A pause the human was
+ *    never shown — a price that moved while they deliberated, a new velocity
+ *    trip — still pauses. An approval is consent to specific findings, not a
+ *    blanket waiver.
+ *  - **Nothing DENY-severity is present.** This function is only ever reached
+ *    when the verdict is already PAUSE, so a DENY cannot be here; the filter
+ *    below is explicit anyway, because relying on a caller's precondition for a
+ *    security property is how that property gets lost.
+ *
+ * Note what is NOT checked: whether the operator "should" have approved. That
+ * is their judgement, and the system's job is to bind it to a specific cart and
+ * a specific set of reasons rather than to second-guess it.
+ */
+function approvalCovers(findings: readonly Finding[], options: CombineOptions): boolean {
+  const approval = options.approval;
+  if (approval === null || approval === undefined) return false;
+  if (options.requestFingerprint === null || options.requestFingerprint !== approval.boundTo) {
+    return false;
+  }
+  if (findings.some(item => item.severity === 'DENY')) return false;
+
+  const approved = new Set(approval.reasonCodes);
+  const pausing = findings.filter(item => item.severity === 'PAUSE');
+  if (pausing.length === 0) return false;
+  return pausing.every(item => approved.has(item.code));
 }
 
 function dedupeCodes(findings: readonly Finding[]): ReasonCode[] {

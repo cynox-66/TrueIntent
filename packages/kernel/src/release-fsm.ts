@@ -52,6 +52,7 @@ export const TRANSITION_TRIGGERS = [
   'SETTLEMENT_CONFIRMED',
   'PAYMENT_FAILED',
   'REVIEW_APPROVED',
+  'REVIEW_APPROVED_AT_ORDER_GATE',
   'REVIEW_REJECTED',
   'ABORT',
 ] as const;
@@ -223,7 +224,15 @@ export const TRANSITIONS: readonly TransitionRule[] = Object.freeze([
     from: ['PAUSED'],
     to: 'CAPTURE_VERIFYING',
     description:
-      'An operator approved a paused release. Verification runs again rather than being skipped.',
+      'An operator approved a release paused at the capture gate. Verification runs again rather than being skipped.',
+    writeAhead: false,
+  },
+  {
+    trigger: 'REVIEW_APPROVED_AT_ORDER_GATE',
+    from: ['PAUSED'],
+    to: 'VERIFYING',
+    description:
+      'An operator approved a release paused at the ORDER gate. It returns to the order gate, not the capture gate — there is no order and no payment yet, so the capture gate would have nothing to act on.',
     writeAhead: false,
   },
   {

@@ -36,6 +36,7 @@ import {
   type ProviderOrder,
   type ProviderPayment,
   type Receipt,
+  type Timestamp,
 } from '@capturelock/core';
 import type { ExecutionGrant } from './grant.js';
 
@@ -64,7 +65,17 @@ export function paymentReaderOf(provider: PaymentProvider): PaymentReader {
 
 export class GuardedPaymentExecutor implements GrantedPaymentExecutor {
   public readonly name: string;
-  private readonly consumed = new Set<string>();
+  /**
+   * Burned nonces, held only while they could still be replayed.
+   *
+   * The value is the grant's expiry. Retaining a nonce past that instant adds
+   * no protection — `consume` rejects an expired grant before it ever consults
+   * this set — but retaining every nonce for the life of the process is an
+   * unbounded leak in a service intended to run for months. Entries are dropped
+   * once expired, which cannot widen the replay window because the expiry check
+   * runs first.
+   */
+  private readonly consumed = new Map<string, Timestamp>();
 
   constructor(
     private readonly provider: PaymentProvider,
@@ -107,7 +118,8 @@ export class GuardedPaymentExecutor implements GrantedPaymentExecutor {
    * failure before the write-ahead — no money moves.
    */
   private consume(grant: ExecutionGrant, operation: string): void {
-    if (isAfter(this.clock.now(), grant.expiresAt)) {
+    const now = this.clock.now();
+    if (isAfter(now, grant.expiresAt)) {
       throw new GrantRejectedError(
         'EXPIRED',
         `${operation} for release ${grant.releaseId} presented a grant that expired at ${grant.expiresAt}`,
@@ -119,10 +131,23 @@ export class GuardedPaymentExecutor implements GrantedPaymentExecutor {
         `${operation} for release ${grant.releaseId} presented an already-used grant`,
       );
     }
-    this.consumed.add(grant.nonce);
+    this.consumed.set(grant.nonce, grant.expiresAt);
+    this.evictExpired(now);
   }
 
-  /** Test helper: how many grants this executor has burned. */
+  /**
+   * Drops nonces whose grants can no longer be presented.
+   *
+   * Swept on write rather than on a timer, so the executor owns no background
+   * work and stays trivially testable.
+   */
+  private evictExpired(now: Timestamp): void {
+    for (const [nonce, expiresAt] of this.consumed) {
+      if (isAfter(now, expiresAt)) this.consumed.delete(nonce);
+    }
+  }
+
+  /** Test helper: how many burned grants are still being remembered. */
   consumedCount(): number {
     return this.consumed.size;
   }

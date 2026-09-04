@@ -311,7 +311,7 @@ describe('the paused review path', () => {
     expect(review).not.toBeNull();
   });
 
-  it('sends an approved release back through verification, not straight to capture', async () => {
+  it('sends an approved order-gate pause back to the ORDER gate, not the capture gate', async () => {
     const h = new Harness({ maxAttemptsInWindow: 0 });
     const authorizationId = await h.setup();
     const snapshotId = await h.quote(authorizationId);
@@ -326,8 +326,15 @@ describe('the paused review path', () => {
     const resolved = await h.reviewService.resolve(review.reviewId, 'APPROVED', 'operator_dev');
 
     expect(resolved.kind).toBe('RESOLVED');
-    // Approval re-enters the capture gate. It does not authorize a payment.
-    expect((resolved as { state: string }).state).toBe('CAPTURE_VERIFYING');
+    // This release paused at gate 1 — `provider.calls` is empty, so no order
+    // exists and therefore no payment does either. Sending it to
+    // CAPTURE_VERIFYING (which this test previously asserted) was a dead end:
+    // the capture gate would find no provider payment and refuse with
+    // INVALID_RELEASE_STATE_FOR_GATE, so the operator's approval produced a
+    // permanent denial and the order was never created.
+    //
+    // Approval re-enters the gate that paused. It does not authorize a payment.
+    expect((resolved as { state: string }).state).toBe('VERIFYING');
     expect(h.provider.calls).toHaveLength(0);
   });
 

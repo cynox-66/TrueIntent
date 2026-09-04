@@ -300,6 +300,18 @@ export class PostgresReviewRepository implements ReviewRepository {
     return rows.length === 0 ? null : toReview(rows[0]!);
   }
 
+  /** The latest approval for a release, which the kernel consumes. */
+  async findLatestApprovedByRelease(id: ReleaseId): Promise<ReviewRecord | null> {
+    const rows = await this.db.query<ReviewRow>(
+      `${REVIEW_SELECT}
+       WHERE release_id = $1 AND state = 'APPROVED'
+       ORDER BY resolved_at DESC NULLS LAST, review_id DESC
+       LIMIT 1`,
+      [id],
+    );
+    return rows.length === 0 ? null : toReview(rows[0]!);
+  }
+
   /**
    * Open reviews only, oldest first.
    *

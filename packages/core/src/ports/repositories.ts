@@ -218,6 +218,17 @@ export interface ReviewRepository {
    * would be a lie about the state of the world.
    */
   listOpen(limit: number): Promise<readonly ReviewRecord[]>;
+  /**
+   * The most recent APPROVED review for a release, if any.
+   *
+   * The kernel reads this so an operator's approval can actually clear the
+   * findings it covers. Without it, re-verification after an approval
+   * reproduces the same PAUSE and the review loop never terminates.
+   *
+   * Most recent, not first: a release can pause more than once, and it is the
+   * latest decision that reflects what a human currently believes.
+   */
+  findLatestApprovedByRelease(id: ReleaseId): Promise<ReviewRecord | null>;
   /** CAS from OPEN to a resolution. Returns null if already resolved. */
   resolve(
     id: ReviewId,

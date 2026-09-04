@@ -219,6 +219,36 @@ describe('open reviews', () => {
     );
   });
 
+  it('returns the latest approval and never an unresolved or rejected one', async () => {
+    // Mirrors the Postgres assertions in `operator-queue.db.test.ts`.
+    const release = put('PAUSED', '2026-09-02T00:00:00.000Z', 'a');
+    const first = openReview(release, '2026-09-02T00:00:00.000Z');
+    await reviews.insert(first);
+
+    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+
+    await reviews.resolve(
+      first.reviewId,
+      'REJECTED',
+      'operator_dev',
+      at('2026-09-02T01:00:00.000Z'),
+    );
+    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+
+    const second = openReview(release, '2026-09-02T02:00:00.000Z');
+    await reviews.insert(second);
+    await reviews.resolve(
+      second.reviewId,
+      'APPROVED',
+      'operator_two',
+      at('2026-09-02T03:00:00.000Z'),
+    );
+
+    const found = await reviews.findLatestApprovedByRelease(release.releaseId);
+    expect(found?.reviewId).toBe(second.reviewId);
+    expect(found?.resolvedBy).toBe('operator_two');
+  });
+
   it('orders oldest first with a total tiebreak', async () => {
     const newer = openReview(
       put('PAUSED', '2026-09-02T00:00:00.000Z', 'a'),

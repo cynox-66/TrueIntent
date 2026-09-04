@@ -37,6 +37,14 @@ export interface WebhookEvent {
   readonly providerEventAt: Timestamp | null;
   readonly paymentId: string | null;
   readonly orderId: string | null;
+  /**
+   * The payment entity's own amount and currency, when the event carried them.
+   *
+   * Optional rather than required: a caller that cannot extract them is not
+   * asserting a mismatch, and a field that is absent is simply not checked.
+   */
+  readonly amountMinor?: number | null;
+  readonly currency?: string | null;
 }
 
 export type WebhookResult =
@@ -49,6 +57,11 @@ export type WebhookResult =
     }
   | { readonly kind: 'UNKNOWN_EVENT_RECORDED' }
   | { readonly kind: 'NO_MATCHING_RELEASE' }
+  | {
+      readonly kind: 'ENTITY_MISMATCH_IGNORED';
+      readonly reasonCode: ReasonCode;
+      readonly state: ReleaseState;
+    }
   | { readonly kind: 'SIGNATURE_INVALID' };
 
 /** Event types this build understands. Anything else is stored, never applied. */
@@ -106,6 +119,32 @@ export class WebhookService {
       return { kind: 'NO_MATCHING_RELEASE' };
     }
 
+    // The signature proves the sender holds the webhook secret. It does not
+    // prove the entity inside belongs to this release, and those are different
+    // claims: a misrouted, duplicated or mis-serialized event would bind a
+    // payment we never created an order for, and the capture gate would later
+    // present that payment id to the provider with THIS release's amount.
+    //
+    // Correlation identifiers we recorded ourselves are the authority here, so
+    // the event is checked against them rather than trusted. A mismatch is
+    // recorded and refused rather than applied — an unexplained mismatch is not
+    // something to resolve in the provider's favour.
+    const mismatch = describeEntityMismatch(release, event);
+    if (mismatch !== null) {
+      await this.deps.webhookInbox.markProcessed(
+        event.providerEventId,
+        'FAILED',
+        now,
+        release.releaseId,
+      );
+      await this.recordEvidence(release, event, release.state, `ENTITY_MISMATCH: ${mismatch}`);
+      return {
+        kind: 'ENTITY_MISMATCH_IGNORED',
+        reasonCode: 'WEBHOOK_ENTITY_MISMATCH',
+        state: release.state,
+      };
+    }
+
     const target = nextState(release.state, trigger);
     if (target === null) {
       // The event implies a move the machine does not declare from here. This
@@ -131,7 +170,9 @@ export class WebhookService {
       target,
       {
         providerPaymentId: event.paymentId ?? release.providerPaymentId,
-        providerOrderId: event.orderId ?? release.providerOrderId,
+        // Only ever set, never rewritten: the mismatch check above has already
+        // established that any order id present equals the one we recorded.
+        providerOrderId: release.providerOrderId ?? event.orderId,
       },
       now,
     );
@@ -196,6 +237,48 @@ export class WebhookService {
       },
     });
   }
+}
+
+/**
+ * Why this event does not belong to this release, or null when it does.
+ *
+ * Deliberately tolerant of absence and intolerant of contradiction: a field the
+ * event does not carry cannot be checked, but a field it does carry must agree.
+ * The amount is compared in minor units against the release's own figure, which
+ * is the number the capture gate will present to the provider.
+ */
+function describeEntityMismatch(release: ReleaseRecord, event: WebhookEvent): string | null {
+  if (
+    event.orderId !== null &&
+    release.providerOrderId !== null &&
+    event.orderId !== release.providerOrderId
+  ) {
+    return `order ${event.orderId} is not this release's order ${release.providerOrderId}`;
+  }
+  if (
+    event.paymentId !== null &&
+    release.providerPaymentId !== null &&
+    event.paymentId !== release.providerPaymentId
+  ) {
+    return `payment ${event.paymentId} is not this release's payment ${release.providerPaymentId}`;
+  }
+  if (
+    event.amountMinor !== null &&
+    event.amountMinor !== undefined &&
+    event.amountMinor !== release.amount.amountMinor
+  ) {
+    return `amount ${String(event.amountMinor)} is not this release's amount ${String(
+      release.amount.amountMinor,
+    )}`;
+  }
+  if (
+    event.currency !== null &&
+    event.currency !== undefined &&
+    event.currency !== release.amount.currency
+  ) {
+    return `currency ${event.currency} is not this release's currency ${release.amount.currency}`;
+  }
+  return null;
 }
 
 /** Strips anything non-canonicalizable so hashing a hostile payload cannot throw. */

@@ -53,6 +53,17 @@ export interface IdempotencyStore {
   complete(key: string, statusCode: number, response: unknown): Promise<void>;
   /** Releases a claim whose work failed, so a retry is not blocked forever. */
   abandon(key: string): Promise<void>;
+  /**
+   * Forgets a stored answer that is no longer true.
+   *
+   * Used when an operator overrules a recorded decision. Replaying a PAUSE
+   * after a human has approved it hands back the very answer they overruled,
+   * and the release can then never proceed — the retry never reaches the
+   * domain at all. This is narrower than `abandon`: it discards a *completed*
+   * response on purpose, and only the API layer calls it, only after a
+   * resolution it just performed.
+   */
+  forget(key: string): Promise<void>;
   find(key: string): Promise<IdempotencyRecord | null>;
 }
 
@@ -125,6 +136,11 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
     );
   }
 
+  /** Deletes a completed answer an operator has overruled. */
+  async forget(key: string): Promise<void> {
+    await this.db.query(`DELETE FROM idempotency_records WHERE key = $1`, [key]);
+  }
+
   async abandon(key: string): Promise<void> {
     await this.db.query(`DELETE FROM idempotency_records WHERE key = $1 AND status = 'IN_FLIGHT'`, [
       key,
@@ -180,6 +196,10 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     const existing = this.rows.get(key);
     if (existing === undefined) return;
     this.rows.set(key, { ...existing, status: 'COMPLETED', statusCode, response });
+  }
+
+  async forget(key: string): Promise<void> {
+    this.rows.delete(key);
   }
 
   async abandon(key: string): Promise<void> {

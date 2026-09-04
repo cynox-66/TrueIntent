@@ -60,7 +60,12 @@ export interface KernelResult {
 /** Runs the pipeline and combines the findings into a single verdict. */
 export function evaluate(context: VerificationContext): VerificationDecision {
   const executions = runStages(PIPELINE, context);
-  return combine(executions, context.gate, context.evaluatedAt);
+  return combine(executions, context.gate, context.evaluatedAt, {
+    approval: context.execution.approvedReview ?? null,
+    // What the approval must match. A re-quote or a different gate produces a
+    // different fingerprint, which silently invalidates a stale approval.
+    requestFingerprint: context.execution.requestFingerprint,
+  });
 }
 
 /** `evaluate` plus the two hashes that go into the evidence envelope. */

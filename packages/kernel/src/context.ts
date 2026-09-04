@@ -41,6 +41,28 @@ export interface Principal {
   readonly sessionId: string;
 }
 
+/** What an operator approved, and for which request. */
+export interface ApprovedReview {
+  readonly reviewId: string;
+  /**
+   * The request the approval was given for.
+   *
+   * This is the release's request fingerprint — a hash over the authorization,
+   * the snapshot and the gate. Binding to it means an approval applies to this
+   * exact cart at this exact gate: a re-quote produces a new snapshot and a new
+   * fingerprint, and an approval given at the order gate does not silently
+   * carry over to the capture gate, where the reviewer saw nothing.
+   *
+   * (`ReviewRecord` stores this value in a field named `snapshotHash`. The name
+   * predates the fingerprint; the value has always been the fingerprint.)
+   */
+  readonly boundTo: Sha256Hex;
+  /** Exactly the reason codes the reviewer was shown. */
+  readonly reasonCodes: readonly string[];
+  readonly resolvedBy: string;
+  readonly resolvedAt: Timestamp;
+}
+
 export interface ExecutionContext {
   /** The release this gate is running for, if one exists yet. */
   readonly release: ReleaseRecord | null;
@@ -49,6 +71,19 @@ export interface ExecutionContext {
   /** Any other non-terminal release on this authorization. */
   readonly otherActiveRelease: ReleaseRecord | null;
   /** Digest of the materially significant request fields, for idempotency-key reuse detection. */
+  /**
+   * An operator approval for this release, if one has been recorded.
+   *
+   * Present so the kernel can *consume* a decision a human already made.
+   * Without it an approval changes nothing: re-verification reproduces the same
+   * PAUSE, the release pauses again, and the review loop never terminates —
+   * which is what the code did before this field existed.
+   *
+   * It is bound to a snapshot hash and to the exact reason codes the reviewer
+   * saw, so it authorizes *this cart* against *those findings* and nothing
+   * else. See `applyApproval` in combine.ts for how narrowly it is applied.
+   */
+  readonly approvedReview: ApprovedReview | null;
   readonly requestFingerprint: Sha256Hex;
   readonly attemptsInWindow: number;
   readonly velocityWindowSeconds: number;

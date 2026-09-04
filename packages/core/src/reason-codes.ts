@@ -361,6 +361,16 @@ export const REASON_CODE_DEFINITIONS = {
     'INFO',
     'A webhook implied a backwards state transition and was recorded without applying it.',
   ),
+  REVIEW_APPROVAL_APPLIED: def(
+    'INFORMATIONAL',
+    'INFO',
+    'An operator approval, bound to this exact snapshot, cleared the pause findings it covers.',
+  ),
+  WEBHOOK_ENTITY_MISMATCH: def(
+    'EXECUTION',
+    'DENY',
+    'A webhook carried a payment whose order or amount does not match the release it addressed.',
+  ),
 } as const satisfies Record<string, ReasonDefinition>;
 
 export type ReasonCode = keyof typeof REASON_CODE_DEFINITIONS;
