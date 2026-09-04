@@ -30,6 +30,7 @@ import { withIdempotency } from './http-idempotency.js';
 import { registerDevRoutes } from './routes/dev.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { forbidden, hasAuthority, principalOf, unauthenticated } from './auth.js';
+import { loadEvaluationSummary } from './evaluation-report.js';
 import type {
   EvidenceTimelineResponse,
   OperatorQueueItem,
@@ -646,6 +647,16 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
 
     return reply.send({ envelope, replay });
   });
+
+  /**
+   * The committed evaluation result.
+   *
+   * Unauthenticated, like the evidence reads: it discloses nothing about any
+   * user, and it is the figure the project is willing to be judged on. Served
+   * from `reports/evaluation.json` so a screen can never state a number the
+   * report does not.
+   */
+  server.get('/v1/evaluation/summary', async () => loadEvaluationSummary());
 
   // The agentic commerce surface. Its own module because the authority split —
   // issuer to delegate, principal to shop and ask, operator to read the

@@ -1814,6 +1814,94 @@ table.grid tr:last-child td {
   font-size: 0.75rem;
 }
 
+/* ------------------------------------------------------- evaluation proof -- */
+/*
+ * A proof point, not a dashboard. Two rows, one contrast, one qualifying
+ * sentence. The figure carries the weight, so nothing else competes with it —
+ * no chart, no sparkline, no card grid.
+ */
+
+.proof {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 3.5rem;
+  overflow: hidden;
+}
+
+.proof-head {
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  padding: 0.7rem 1.5rem;
+  text-transform: uppercase;
+}
+
+.proof-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.proof-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1.75rem 1.5rem;
+}
+
+.proof-row.is-without {
+  border-right: 1px solid var(--border);
+}
+
+.proof-label {
+  color: var(--text-dim);
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.proof-figure {
+  font-family: var(--mono);
+  font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.is-without .proof-figure {
+  color: var(--danger);
+}
+
+.is-with .proof-figure {
+  color: var(--safe);
+}
+
+.proof-detail {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+
+.proof-foot {
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  margin: 0;
+  padding: 1rem 1.5rem;
+}
+
+@media (max-width: 46rem) {
+  .proof-rows {
+    grid-template-columns: 1fr;
+  }
+
+  .proof-row.is-without {
+    border-bottom: 1px solid var(--border);
+    border-right: none;
+  }
+}
+
 /* ----------------------------------------------- authority versus reality -- */
 /*
  * Two questions, two colours, held apart everywhere they appear. Authority is

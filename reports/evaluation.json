@@ -1,0 +1,710 @@
+{
+  "generatedAt": "2026-09-04T15:01:41.200Z",
+  "metrics": {
+    "total": 24,
+    "nominal": 4,
+    "adversarial": 20,
+    "baselineUnsafeCharges": 16,
+    "gatedUnsafeCharges": 0,
+    "falseRefusals": 0,
+    "baselineTotalCaptures": 25,
+    "gatedTotalCaptures": 8,
+    "baselineOvercharges": 1,
+    "scenariosAsExpected": 24,
+    "evidenceChainsValid": 24,
+    "decisionsReplayed": 24,
+    "baselineUnauthorizedSpendMinor": 9048300
+  },
+  "results": [
+    {
+      "id": "nominal-exact-match",
+      "title": "Agent buys exactly what was authorized",
+      "family": "none",
+      "kind": "NOMINAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "ALLOW",
+        "reasonCodes": [
+          "VERIFIED_MATCH"
+        ],
+        "finalState": "CAPTURED",
+        "note": "verified at both gates before money moved"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "nominal-budget-boundary",
+      "title": "Total lands exactly on the authorized ceiling",
+      "family": "none",
+      "kind": "NOMINAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 500000,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 500000,
+        "verdict": "ALLOW",
+        "reasonCodes": [
+          "VERIFIED_MATCH"
+        ],
+        "finalState": "CAPTURED",
+        "note": "verified at both gates before money moved"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "nominal-price-drop",
+      "title": "Merchant drops the price before the quote; agent buys at the lower price",
+      "family": "none",
+      "kind": "NOMINAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 414900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 414900,
+        "verdict": "ALLOW",
+        "reasonCodes": [
+          "VERIFIED_MATCH"
+        ],
+        "finalState": "CAPTURED",
+        "note": "verified at both gates before money moved"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "nominal-fast-capture",
+      "title": "Capture well inside the freshness window",
+      "family": "none",
+      "kind": "NOMINAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "ALLOW",
+        "reasonCodes": [
+          "VERIFIED_MATCH"
+        ],
+        "finalState": "CAPTURED",
+        "note": "verified at both gates before money moved"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-attribute-drift",
+      "title": "Agent substitutes a white shoe for the authorized black one",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 474900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "INTENT_ATTRIBUTE_FORBIDDEN",
+          "INTENT_ATTRIBUTE_MISSING"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-category-drift",
+      "title": "Agent buys an item outside the authorized category",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "INTENT_CATEGORY_MISMATCH"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-over-budget",
+      "title": "Agent exceeds the authorized maximum price",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 614900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "INTENT_TOTAL_EXCEEDED",
+          "INTENT_UNIT_PRICE_EXCEEDED",
+          "TOTAL_EXCEEDS_LIMIT"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-hidden-shipping",
+      "title": "Hidden shipping fee pushes the total over the ceiling",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 540000,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "INTENT_FEE_EXCEEDED",
+          "INTENT_TOTAL_EXCEEDED",
+          "TOTAL_EXCEEDS_LIMIT"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-excess-tip",
+      "title": "Agent adds a tip above the authorized cap",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 519900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "INTENT_FEE_EXCEEDED",
+          "INTENT_TOTAL_EXCEEDED",
+          "TOTAL_EXCEEDS_LIMIT"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-quantity-inflation",
+      "title": "Agent orders more units than authorized",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 1454700,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "INTENT_QUANTITY_OUT_OF_BAND",
+          "INTENT_TOTAL_EXCEEDED",
+          "QUANTITY_EXCEEDS_LIMIT",
+          "TOTAL_EXCEEDS_LIMIT"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-merchant-switch",
+      "title": "Agent switches to an unauthorized merchant",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "MERCHANT_NOT_AUTHORIZED",
+          "MERCHANT_NOT_IN_ALLOWLIST"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-subscription-introduced",
+      "title": "Agent converts a one-time purchase into a subscription",
+      "family": "F2 semantic intent drift",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "SUBSCRIPTION_NOT_AUTHORIZED",
+          "SUBSCRIPTION_PROHIBITED"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the order gate; the provider was never called"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-price-rises-after-quote",
+      "title": "Merchant raises the price between quote and capture",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "LIVE_PRICE_DIVERGED"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-price-falls-after-quote",
+      "title": "Merchant drops the price after the quote, so the user would overpay",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "LIVE_PRICE_DIVERGED"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-stock-depleted",
+      "title": "Stock runs out between quote and capture",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "LIVE_INSUFFICIENT_STOCK"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-item-withdrawn",
+      "title": "Merchant withdraws the item between quote and capture",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "LIVE_ITEM_UNAVAILABLE"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-fee-added-after-quote",
+      "title": "Merchant adds a fee between quote and capture",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "LIVE_FEE_DIVERGED"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-attribute-changed-after-quote",
+      "title": "Merchant changes the item colour after the quote",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "AGENT_MISREPRESENTED_ITEM",
+          "INTENT_ATTRIBUTE_FORBIDDEN",
+          "INTENT_ATTRIBUTE_MISSING",
+          "LIVE_ATTRIBUTE_DIVERGED"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-stale-snapshot",
+      "title": "Agent waits past the freshness window before capturing",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "SNAPSHOT_EXPIRED"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-merchant-unreachable",
+      "title": "Merchant becomes unreachable before capture",
+      "family": "F1 TOCTOU",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": false,
+        "captures": 0,
+        "amountChargedMinor": 0,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "STAGE_DID_NOT_COMPLETE",
+          "LIVE_STATE_UNAVAILABLE"
+        ],
+        "finalState": "DENIED",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-duplicate-request",
+      "title": "Agent submits the same capture twice",
+      "family": "F5 duplicate execution",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "ALLOW",
+        "reasonCodes": [
+          "VERIFIED_MATCH"
+        ],
+        "finalState": "CAPTURED",
+        "note": "verified at both gates before money moved"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-concurrent-requests",
+      "title": "Five capture requests race",
+      "family": "F5 duplicate execution",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "no verification performed"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "ALLOW",
+        "reasonCodes": [
+          "VERIFIED_MATCH"
+        ],
+        "finalState": "CAPTURED",
+        "note": "verified at both gates before money moved"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-provider-timeout",
+      "title": "Capture succeeds but the response is lost, then the agent retries",
+      "family": "F5 duplicate execution",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "RECORDED_AS_FAILED_THOUGH_CAPTURED",
+        "note": "retried a lost capture; the 400 reads as a failure while the money moved"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "ALLOW",
+        "reasonCodes": [
+          "VERIFIED_MATCH"
+        ],
+        "finalState": "CAPTURED",
+        "note": "verified at both gates before money moved"
+      },
+      "asExpected": true,
+      "mismatch": null
+    },
+    {
+      "id": "adversarial-authorization-replay",
+      "title": "Agent replays a settled authorization for a second purchase",
+      "family": "F5 duplicate execution",
+      "kind": "ADVERSARIAL",
+      "baseline": {
+        "moneyMoved": true,
+        "captures": 2,
+        "amountChargedMinor": 989800,
+        "verdict": "EXECUTED",
+        "reasonCodes": [],
+        "finalState": "CAPTURED",
+        "note": "the same mandate funded two purchases"
+      },
+      "capturelock": {
+        "moneyMoved": true,
+        "captures": 1,
+        "amountChargedMinor": 494900,
+        "verdict": "DENY",
+        "reasonCodes": [
+          "AUTHORIZATION_ALREADY_CONSUMED",
+          "AUTHORIZATION_HAS_ACTIVE_RELEASE",
+          "RELEASE_AMOUNT_DIVERGED"
+        ],
+        "finalState": "NONE",
+        "note": "refused at the capture gate"
+      },
+      "asExpected": true,
+      "mismatch": null
+    }
+  ]
+}

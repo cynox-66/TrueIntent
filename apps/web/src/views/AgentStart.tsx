@@ -14,6 +14,8 @@
 
 import { useState, type ReactNode } from 'react';
 import { api, type Principal } from '../api/client.js';
+import type { EvaluationSummary } from '../api/types.js';
+import { useAsync } from '../lib/useAsync.js';
 import { navigate } from '../lib/router.js';
 import { formatMoney } from '../lib/format.js';
 import { ErrorBlock } from '../components/primitives.js';
@@ -83,6 +85,64 @@ const SCENARIOS: readonly {
       'The agent tries to book the ₹6,649 tasting menu. Your delegation says ₹5,000, so no mandate is created and the restaurant is never consulted — reality never enters into it.',
   },
 ];
+
+/**
+ * The counterfactual, from the committed evaluation report.
+ *
+ * The strongest thing this project can say is not "we refuse things" — it is
+ * what the *same agent* does without the layer. That figure already exists in
+ * `reports/evaluation.json`; this reads it rather than restating it, so the
+ * screen can never claim a number the report does not.
+ *
+ * It renders nothing at all when no report is available. A missing proof point
+ * is honest; a placeholder standing in for one is not.
+ */
+function EvaluationProof(): ReactNode {
+  const { state } = useAsync<EvaluationSummary>(signal => api.evaluationSummary(signal), []);
+
+  if (state.status !== 'ready' || !state.data.available) return null;
+  const summary = state.data;
+
+  return (
+    <section className="proof" aria-label="Evaluation result">
+      <div className="proof-head">
+        Evaluation result — {summary.totalScenarios} scenarios, {summary.adversarialScenarios}{' '}
+        adversarial
+      </div>
+
+      <div className="proof-rows">
+        <div className="proof-row is-without">
+          <span className="proof-label">Without CaptureLock</span>
+          <span className="proof-figure">
+            {formatMoney({
+              currency: summary.currency,
+              amountMinor: summary.baselineUnauthorizedSpendMinor,
+            } as never)}{' '}
+            moved
+          </span>
+          <span className="proof-detail">
+            {summary.baselineUnsafeCharges} unauthorized charges
+          </span>
+        </div>
+
+        <div className="proof-row is-with">
+          <span className="proof-label">With CaptureLock</span>
+          <span className="proof-figure">
+            {formatMoney({ currency: summary.currency, amountMinor: 0 } as never)} moved
+          </span>
+          <span className="proof-detail">{summary.gatedUnsafeCharges} unauthorized charges</span>
+        </div>
+      </div>
+
+      <p className="proof-foot">
+        The same agent, the same catalogue, the same payment provider — run twice. This is a
+        committed evaluation suite, not production traffic, and it measures behaviour on scenarios
+        this project chose. {summary.falseRefusals} legitimate purchases were wrongly refused;{' '}
+        {summary.decisionsReplayed} decisions replayed from evidence.
+      </p>
+    </section>
+  );
+}
 
 export function AgentStart(): ReactNode {
   const [starting, setStarting] = useState<ScenarioId | null>(null);
@@ -160,6 +220,8 @@ export function AgentStart(): ReactNode {
           <div className="boundary-note boundary-note-strong">Test mode</div>
         </div>
       </section>
+
+      <EvaluationProof />
 
       <section className="delegation-card">
         <div className="delegation-head">What you are delegating</div>

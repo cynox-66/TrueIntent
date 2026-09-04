@@ -370,13 +370,14 @@ describe('the buyer surface', () => {
   it('leads with the boundary, not with the agent', async () => {
     // A judge reading for ten seconds should come away with the architecture,
     // not with "an AI bought something".
-    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    route({
+      '/v1/evaluation/summary': { body: { available: false, reason: 'no report' } },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
     render(<AgentStart />);
 
-    expect(screen.getByText(/without giving it your money/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Deterministic\. The only path to the provider\./i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/without giving it your money/i)).toBeInTheDocument();
+    expect(screen.getByText(/Deterministic\. The only path to the provider\./i)).toBeInTheDocument();
     // The three outcomes are named up front, including the two refusals.
     expect(screen.getByText(/Payment captured/i)).toBeInTheDocument();
     expect(screen.getByText(/Capture refused/i)).toBeInTheDocument();
@@ -384,35 +385,98 @@ describe('the buyer surface', () => {
   });
 
   it('says the delegation is not the agent\u2019s to choose', async () => {
-    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    route({
+      '/v1/evaluation/summary': { body: { available: false, reason: 'no report' } },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
     render(<AgentStart />);
-    expect(screen.getByText(/The agent cannot set any of these/i)).toBeInTheDocument();
+    expect(await screen.findByText(/The agent cannot set any of these/i)).toBeInTheDocument();
   });
 
   it('does not claim the scenarios are mock-ups', async () => {
-    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    route({
+      '/v1/evaluation/summary': { body: { available: false, reason: 'no report' } },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
     render(<AgentStart />);
-    expect(screen.getByText(/runs the real API against Postgres/i)).toBeInTheDocument();
+    expect(await screen.findByText(/runs the real API against Postgres/i)).toBeInTheDocument();
   });
 });
 
-describe('the two questions the buyer surface asks', () => {
+describe('the judge-facing proof points', () => {
+  const SUMMARY = {
+    available: true,
+    totalScenarios: 24,
+    adversarialScenarios: 20,
+    baselineUnsafeCharges: 16,
+    gatedUnsafeCharges: 0,
+    baselineUnauthorizedSpendMinor: 9_048_300,
+    currency: 'INR',
+    falseRefusals: 0,
+    evidenceChainsValid: 24,
+    decisionsReplayed: 24,
+    generatedAt: '2026-09-04T14:33:18.493Z',
+  };
+
+  it('shows the counterfactual, both sides of it', async () => {
+    route({
+      '/v1/evaluation/summary': { body: SUMMARY },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
+    render(<AgentStart />);
+
+    expect(await screen.findByText(/Without CaptureLock/i)).toBeInTheDocument();
+    expect(screen.getByText(/With CaptureLock/i)).toBeInTheDocument();
+    // The number, formatted from the reported minor units.
+    expect(screen.getByText(/90,483/)).toBeInTheDocument();
+    expect(screen.getByText(/16 unauthorized charges/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 unauthorized charges/i)).toBeInTheDocument();
+  });
+
+  it('says it is an evaluation suite and not production traffic', async () => {
+    route({
+      '/v1/evaluation/summary': { body: SUMMARY },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
+    render(<AgentStart />);
+    expect(await screen.findByText(/not production traffic/i)).toBeInTheDocument();
+  });
+
+  it('renders nothing at all when no report exists', async () => {
+    // A missing proof point is honest; a placeholder standing in for one is not.
+    route({
+      '/v1/evaluation/summary': { body: { available: false, reason: 'no report' } },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
+    render(<AgentStart />);
+
+    await screen.findByText(/without giving it your money/i);
+    expect(screen.queryByText(/Without CaptureLock/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no report/i)).not.toBeInTheDocument();
+  });
+
   it('holds authority and reality apart as two questions', async () => {
     // Collapsing them into one "security check" would make the system look
     // like one rule doing double duty.
-    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    route({
+      '/v1/evaluation/summary': { body: SUMMARY },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
     render(<AgentStart />);
 
     // Each question appears twice by design: once where the two checks are
     // named, and again on the card that demonstrates it.
-    expect(screen.getAllByText(/Was this purchase ever allowed\?/i)).toHaveLength(2);
+    expect(await screen.findAllByText(/Was this purchase ever allowed\?/i)).toHaveLength(2);
     expect(screen.getAllByText(/Is this purchase still true\?/i)).toHaveLength(2);
   });
 
   it('admits the merchant is a fixture', async () => {
-    route({ '/health': { body: { status: 'ok', paymentProvider: 'fake' } } });
+    route({
+      '/v1/evaluation/summary': { body: SUMMARY },
+      '/health': { body: { status: 'ok', paymentProvider: 'fake' } },
+    });
     render(<AgentStart />);
-    expect(screen.getByText(/Demo merchant fixture/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Demo merchant fixture/i)).toBeInTheDocument();
   });
 });
 

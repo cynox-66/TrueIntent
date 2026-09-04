@@ -17,6 +17,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { buildApplication, type Application } from '../src/composition.js';
 import { loadConfig } from '../src/config.js';
@@ -338,6 +340,50 @@ describe('a refusal costs nothing', () => {
       session: { spentMinor: DINNER_TOTAL_MINOR, reservedMinor: 0 },
       anyMoneyMoved: true,
     });
+  });
+});
+
+describe('the evaluation proof point', () => {
+  it('serves the counterfactual from the committed report', async () => {
+    // The figures must come from reports/evaluation.json, so the screen can
+    // never state a number the report does not.
+    const response = await server.inject({ method: 'GET', url: '/v1/evaluation/summary' });
+    expect(response.statusCode).toBe(200);
+
+    const body = response.json() as Record<string, unknown>;
+    if (body['available'] !== true) {
+      // A missing report is a legitimate state; it renders nothing rather than
+      // a placeholder. Nothing more to assert.
+      expect(body).toHaveProperty('reason');
+      return;
+    }
+
+    const report = JSON.parse(
+      readFileSync(join(process.cwd(), 'reports', 'evaluation.json'), 'utf8'),
+    ) as { metrics: Record<string, number> };
+
+    expect(body['baselineUnsafeCharges']).toBe(report.metrics['baselineUnsafeCharges']);
+    expect(body['baselineUnauthorizedSpendMinor']).toBe(
+      report.metrics['baselineUnauthorizedSpendMinor'],
+    );
+    expect(body['gatedUnsafeCharges']).toBe(report.metrics['gatedUnsafeCharges']);
+    expect(body['totalScenarios']).toBe(report.metrics['total']);
+  });
+
+  it('reports zero unauthorized charges under CaptureLock, or the suite is lying', async () => {
+    const response = await server.inject({ method: 'GET', url: '/v1/evaluation/summary' });
+    const body = response.json() as Record<string, unknown>;
+    if (body['available'] !== true) return;
+    expect(body['gatedUnsafeCharges']).toBe(0);
+  });
+
+  it('needs no credential, and discloses nothing about any user', async () => {
+    const response = await server.inject({ method: 'GET', url: '/v1/evaluation/summary' });
+    expect(response.statusCode).toBe(200);
+    const serialized = JSON.stringify(response.json());
+    for (const forbidden of ['user_', 'sess_', 'auth_', 'apiKey', 'secret']) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 });
 

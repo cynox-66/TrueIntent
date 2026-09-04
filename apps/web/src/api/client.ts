@@ -24,6 +24,7 @@ import type {
   AuthorizationView,
   CreateSessionRequest,
   DemoSessionResponse,
+  EvaluationSummary,
   PurchaseOutcomeResponse,
   PurchaseRequestBody,
   ChainVerificationResponse,
@@ -260,6 +261,11 @@ export const api = {
    */
   startDemoSession(): Promise<DemoSessionResponse> {
     return request('/v1/dev/demo-session', { method: 'POST' });
+  },
+
+  /** The committed evaluation result. Unauthenticated; discloses no user data. */
+  evaluationSummary(signal?: AbortSignal): Promise<EvaluationSummary> {
+    return request('/v1/evaluation/summary', { signal });
   },
 
   /** Simulates the payer authorizing at the provider. Dev-only, fake provider. */

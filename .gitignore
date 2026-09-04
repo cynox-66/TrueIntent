@@ -39,6 +39,11 @@ vitest.results.json
 
 # Generated evaluation output
 reports/
+# ...except the machine-readable result the buyer surface cites. The screen
+# states a counterfactual, and a claim a reader cannot check is worth nothing,
+# so the file it reads ships with the repository. Regenerate it with `pnpm eval`
+# and the only field that moves is the timestamp.
+!reports/evaluation.json
 
 # Live-verification screenshots. Browser captures of hosted checkout, which
 # routinely include the payer's phone number and the operator's own browser

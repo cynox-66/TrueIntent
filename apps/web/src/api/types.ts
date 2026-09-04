@@ -179,6 +179,29 @@ export interface DemoSessionResponse {
   };
 }
 
+/**
+ * The committed evaluation result, as the server reports it.
+ *
+ * `available: false` when no report has been generated. The screen shows
+ * nothing in that case rather than a placeholder — an absent proof point is
+ * honest, an invented one is not.
+ */
+export type EvaluationSummary =
+  | {
+      readonly available: true;
+      readonly totalScenarios: number;
+      readonly adversarialScenarios: number;
+      readonly baselineUnsafeCharges: number;
+      readonly gatedUnsafeCharges: number;
+      readonly baselineUnauthorizedSpendMinor: number;
+      readonly currency: string;
+      readonly falseRefusals: number;
+      readonly evidenceChainsValid: number;
+      readonly decisionsReplayed: number;
+      readonly generatedAt: string;
+    }
+  | { readonly available: false; readonly reason: string };
+
 /** One turn of the agent loop, and what the server did about it. */
 export interface AgentStepView {
   readonly index: number;
