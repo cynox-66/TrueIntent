@@ -123,6 +123,26 @@ downstream check ceremonial. Identity is always taken from the authenticated
 principal, never from a request body; comparison is constant-time; production
 refuses to start without real keys.
 
+### The demonstration surface
+
+The buyer-facing screens are held to the same separation as everything else, and
+two details are worth stating because the easy version of each would have been
+wrong.
+
+**The browser never holds an issuer key.** Delegating a budget is issuer
+authority. A page that called `POST /v1/sessions` itself would need that key,
+which is the exact key the architecture exists to keep away from the agent side.
+Instead a dev-only route performs the delegation server-side and returns a
+principal. It is guarded like the rest of `routes/dev.ts` — fake provider,
+non-production, re-checked in the handler — and it creates a session with fixed
+bounds it does not take from the request.
+
+**A simulated payment is never presented as a real one.** The provider badge
+reads from `/health` on the running API rather than from build configuration,
+and the fake gets the louder treatment. The result banner repeats it: a captured
+payment says `simulated provider, no real payment` unless Razorpay test mode is
+actually wired.
+
 ## 5. Test-mode enforcement
 
 Three independent refusals of a live Razorpay key: the Zod schema in

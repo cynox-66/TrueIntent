@@ -114,6 +114,30 @@ The agent's tool vocabulary has no word for moving money. A model that
 hallucinates `capture_payment` emits an action that fails schema validation like
 any other malformed output.
 
+## 3b. The surfaces
+
+Two, with different audiences and different authority.
+
+| surface  | route         | holds                     | shows                                                                          |
+| -------- | ------------- | ------------------------- | ------------------------------------------------------------------------------ |
+| buyer    | `/#/agent`    | a principal, nothing else | the delegation, what the agent chose, both gate decisions, whether money moved |
+| operator | `/#/operator` | an operator key           | the queue, release detail, agentic context, the evidence chain                 |
+
+The buyer surface is deliberately **not** behind the operator sign-in: it is the
+screen a person delegating a budget stands in front of, and putting it behind an
+operator credential would have said something false about who it is for.
+
+It never holds an issuer key either. Delegating a budget is issuer authority, so
+the browser asks a dev-only route to perform the delegation server-side and
+receives back only a principal — which confers nothing an unauthenticated caller
+could not claim. A demo that shipped an issuer key to a page in order to be
+convenient would have undermined the thing it was demonstrating.
+
+`GET /v1/sessions/:id/timeline` assembles the story server-side: the delegation,
+and for each purchase the release, both gates with their findings, the provider
+state and the evidence chain. The ordering of the narrative lives on the server,
+where it cannot drift from what happened.
+
 ## 4. Two gates
 
 | Gate             | Endpoint                        | Moves money?                                        |

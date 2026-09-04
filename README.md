@@ -24,6 +24,23 @@ The property everything serves:
 
 ---
 
+## Try it
+
+```bash
+pnpm db:up && pnpm db:migrate
+pnpm dev            # API
+pnpm web            # console, in another terminal — open /#/agent
+pnpm demo agentic   # or watch the same story in a terminal
+```
+
+`/#/agent` is the buyer-facing surface. Three scenarios, each running the real
+API against Postgres: a purchase that goes through, a restaurant that reprices
+between the two gates, and an agent that reaches past what it was delegated.
+The last two end in a refusal with **₹0 moved**, and the screen says which.
+
+Behind it, `/#/operator` is the human control surface — the queue of anything
+CaptureLock paused, and the evidence chain for anything it decided.
+
 ## What it does
 
 A user delegates a **bounded commerce session** — a budget, a purpose, allowed
@@ -107,16 +124,17 @@ cp .env.example .env
 pnpm db:up && pnpm db:migrate   # Postgres schema from scratch
 pnpm dev                        # API on :3000, Postgres, fake provider
 
-pnpm demo           # the walkthrough, asserted at every step (needs `pnpm dev`)
-pnpm demo agent     #   …a bounded AI agent shopping inside delegated authority
+pnpm demo           # `agentic` — the canonical walkthrough (needs `pnpm dev`)
+pnpm demo drift     #   …price drift at the capture gate, without the agent layer
+pnpm demo agent     #   …an aggregate budget across several small purchases
 pnpm demo review    #   …the operator flow: paused, approved, re-verified
 pnpm demo happy     #   …verified at both gates, then captured
 
 pnpm scenario       # 9 end-to-end lifecycle scenarios
 pnpm eval           # baseline vs CaptureLock → reports/
 
-pnpm test           # 680 offline + 45 console tests, no Docker
-pnpm test:db        # 110 tests against real Postgres, incl. 65 parity cases
+pnpm test           # 695 offline + 51 console tests, no Docker
+pnpm test:db        # 112 tests against real Postgres, incl. 67 parity cases
 pnpm web            # operator console at :5173, proxying the API
 pnpm smoke:razorpay         # opt-in: live order semantics
 pnpm smoke:razorpay:capture # opt-in: live capture semantics (one browser step)
@@ -219,7 +237,7 @@ packages/integrations  Razorpay adapter + deterministic fakes
 packages/persistence   SQL schema, Postgres and in-memory repositories
 apps/api               thin HTTP layer
 apps/eval              baseline-versus-CaptureLock harness + agentic scenarios
-docs/decisions         ADR-001..021 — why, and what was rejected
+docs/decisions         ADR-001..022 — why, and what was rejected
 ```
 
 `packages/agent` imports `core` and `zod` and nothing else — no repository, no

@@ -203,3 +203,17 @@ the order gate, so a chain reads in causal order. The kind vocabulary is
 enumerated in exactly two places — `ENVELOPE_KINDS` and the CHECK constraint on
 `evidence_envelopes.kind` — and a parity case appends a full capsule through both
 stores so a disagreement between them fails the build.
+
+### One read projection, no new tables
+
+The buyer surface added no schema. `GET /v1/sessions/:id/timeline` is a
+projection over what is already stored — the session, its purchase rows, the
+releases those authorizations produced, the evaluations recorded against them,
+and the evidence chain.
+
+One read was missing and was added to the release repository:
+`listByAuthorization`, which includes terminal releases. `findActiveByAuthorization`
+deliberately excludes them, because it answers "is this mandate busy?" — and a
+read surface built on it showed nothing for a _refused_ purchase, which is the
+case the product exists to demonstrate. Both stores implement it and the parity
+suite compares them, including the ordering tiebreak under a limit.
