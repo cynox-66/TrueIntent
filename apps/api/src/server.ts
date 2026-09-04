@@ -33,6 +33,7 @@ import type {
   EvidenceTimelineResponse,
   OperatorQueueItem,
   OperatorQueueResponse,
+  ReleaseEvaluationSummary,
 } from './routes/contracts.js';
 import {
   AuthorizationIdParam,
@@ -415,17 +416,26 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
     const release = await app.deps.releases.findById(id);
     if (release === null) return reply.status(404).send({ error: 'NOT_FOUND' });
     const evaluations = await app.deps.evaluations.listByRelease(id);
-    return reply.send({
-      release,
-      evaluations: evaluations.map(e => ({
-        evaluationId: e.evaluationId,
-        gate: e.gate,
-        verdict: e.decision.verdict,
-        reasonCodes: e.decision.reasonCodes,
-        decisionHash: e.decisionHash,
-        evaluatedAt: e.evaluatedAt,
+    // Findings travel with the verdict. A gate that refused is only legible if
+    // the caller can see what it found, and the evaluation row already stores
+    // the whole decision — projecting the codes alone was discarding the
+    // explanation on the way out.
+    const summaries: ReleaseEvaluationSummary[] = evaluations.map(e => ({
+      evaluationId: e.evaluationId,
+      gate: e.gate,
+      verdict: e.decision.verdict,
+      reasonCodes: e.decision.reasonCodes,
+      findings: e.decision.findings.map(f => ({
+        code: f.code,
+        severity: f.severity,
+        stage: f.stage,
+        message: f.message,
+        detail: f.detail,
       })),
-    });
+      decisionHash: e.decisionHash,
+      evaluatedAt: e.evaluatedAt,
+    }));
+    return reply.send({ release, evaluations: summaries });
   });
 
   // -------------------------------------------------------------- operator --

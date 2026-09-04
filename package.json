@@ -30,6 +30,7 @@
     "db:reset": "tsx scripts/migrate.mts --reset",
     "smoke:razorpay": "tsx scripts/smoke-razorpay.mts",
     "scenario": "pnpm --filter @capturelock/eval scenario",
+    "demo": "tsx scripts/demo.mts",
     "smoke:razorpay:capture": "tsx scripts/smoke-razorpay-capture.mts",
     "live:setup": "tsx scripts/live-lifecycle.mts setup",
     "live:finish": "tsx scripts/live-lifecycle.mts finish",

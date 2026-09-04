@@ -32,6 +32,7 @@ import {
   moneyHasMoved,
   newEvaluationId,
   newReleaseId,
+  newReviewId,
   requiresReconciliation,
   addSeconds,
   type AuthorizationId,
@@ -96,7 +97,16 @@ export interface ReleaseOutcome {
   readonly providerPaymentId: string | null;
   /** True when a previously stored answer was returned instead of re-deciding. */
   readonly replayed: boolean;
-  /** True only when the provider confirmed funds moved. */
+  /**
+   * True when the provider confirmed funds moved for this RELEASE.
+   *
+   * A property of the release, not of this request, and the distinction is
+   * load-bearing on a refusal. A caller that lost a race — or a duplicate
+   * capture of a release that is already `CAPTURED` — is refused, and still
+   * sees `moneyMoved: true`, because money did move: someone else moved it.
+   * Reporting `false` there would be a lie about a captured release and would
+   * invite a retry. Read `verdict` to learn whether *this* request captured.
+   */
   readonly moneyMoved: boolean;
 }
 
@@ -203,6 +213,11 @@ export class ReleaseService {
     // edge (in Phase 1 it did not, and silently fell back to a same-state
     // write), and a crash during evaluation leaves a state the liveness sweep
     // recognises as abandonable.
+    //
+    // The source states include CAPTURE_VERIFYING itself, so a release an
+    // operator approved at this gate — which REVIEW_APPROVED left there — can
+    // re-enter and be re-evaluated. See the CAPTURE_REQUESTED rule for why that
+    // re-entry is safe.
     const verifying = await this.deps.releases.transition(
       found.releaseId,
       sourceStatesFor('CAPTURE_REQUESTED'),
@@ -363,7 +378,20 @@ export class ReleaseService {
      */
     override?: { readonly verdict: Verdict; readonly reasonCode: ReasonCode },
   ): Promise<ReleaseOutcome> {
-    const reported = override?.verdict ?? evaluated.decision.verdict;
+    // The override may lower a verdict, never raise one — and never soften a
+    // refusal the kernel already reached.
+    //
+    // It exists for one case: the caller lost a race, but its own context still
+    // evaluated to ALLOW, and reporting that ALLOW would tell it the
+    // transaction was approved. Applying it unconditionally also rewrote a
+    // definitive DENY into a PAUSE, so a second capture of an already-captured
+    // release came back `202 Accepted` with `PAUSE` — an answer that invites
+    // the retry the state machine had just refused. A DENY stays a DENY (422);
+    // the override's reason code is still recorded either way.
+    const reported =
+      override === undefined || evaluated.decision.verdict !== 'ALLOW'
+        ? evaluated.decision.verdict
+        : override.verdict;
     const reasonCodes: readonly ReasonCode[] =
       override === undefined
         ? evaluated.decision.reasonCodes
@@ -419,13 +447,41 @@ export class ReleaseService {
         const existing = await repos.reviews.findOpenByRelease(release.releaseId);
         if (existing === null) {
           await repos.reviews.insert({
-            reviewId: `rev_${release.releaseId.slice(4)}` as never,
+            // A fresh id per review, not one derived from the release.
+            //
+            // A release can pause twice — at the order gate, and again at the
+            // capture gate after an approval sent it forward. Deriving the id
+            // from the release id made the second review collide with the
+            // first: Postgres has ON CONFLICT (review_id) DO NOTHING, so the
+            // second was silently dropped and the operator queue showed a
+            // PAUSED release with no review to resolve; the in-memory store
+            // overwrote the first instead, losing a resolved review's record
+            // and diverging from Postgres on an audited path.
+            reviewId: newReviewId(),
             releaseId: release.releaseId,
             authorizationId: release.authorizationId,
-            // Bound to this exact cart. Re-quoting produces a new hash and needs
-            // a new review, so an approval cannot be reused for a cart the
-            // reviewer never saw.
-            snapshotHash: release.requestFingerprint,
+            // The fingerprint of the request that actually paused — NOT the
+            // one stored on the release row.
+            //
+            // (The field is named `snapshotHash` for the column it persists to;
+            // it has always held a request fingerprint. The name is a known
+            // wart, kept because renaming a persisted field is not worth the
+            // churn, but the *value* has to be right.)
+            //
+            // A fingerprint names the gate as well as the authorization,
+            // snapshot and principal. The release row's copy is the one
+            // computed at the ORDER gate and never changes, so a review opened
+            // at the CAPTURE gate recorded a fingerprint no capture request can
+            // ever present — `approvalCovers` compared the two, found them
+            // different, and refused to apply the approval. The operator could
+            // approve a capture-gate pause and the release would simply pause
+            // again, forever.
+            //
+            // Binding to the paused request's own fingerprint is also the
+            // narrower rule: an approval applies to a retry of exactly the
+            // request the human was shown, at the gate they were shown it at,
+            // and to nothing else. Re-quoting or moving gate invalidates it.
+            snapshotHash: evaluated.resolved.context.execution.requestFingerprint,
             reasonCodes: [...evaluated.decision.reasonCodes],
             state: 'OPEN',
             createdAt: now,

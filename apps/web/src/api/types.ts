@@ -14,26 +14,22 @@
 
 import type { Gate, Money, ReleaseState, ReviewState, Timestamp, Verdict } from '@capturelock/core';
 import type { EvidenceEnvelope } from '@capturelock/evidence';
+// Imported rather than only re-exported: `ReleaseEvaluationSummary` is used in
+// a declaration below, and a bare `export type { … } from` does not bring a
+// name into local scope.
+import type { ReleaseEvaluationSummary } from '@capturelock/api-contracts';
 
 export type {
+  EvaluationFinding,
   EvidenceTimelineResponse,
   OperatorQueueItem,
   OperatorQueueResponse,
   OperatorQueueReview,
+  ReleaseEvaluationSummary,
   WaitingOn,
 } from '@capturelock/api-contracts';
 export type { EvidenceEnvelope } from '@capturelock/evidence';
 export type { Gate, Money, ReleaseState, ReviewState, Timestamp, Verdict };
-
-/** One row of `GET /v1/releases/:id`'s `evaluations`. */
-export interface EvaluationSummary {
-  readonly evaluationId: string;
-  readonly gate: Gate;
-  readonly verdict: Verdict;
-  readonly reasonCodes: readonly string[];
-  readonly decisionHash: string;
-  readonly evaluatedAt: Timestamp;
-}
 
 /** The release record, as `GET /v1/releases/:id` returns it. */
 export interface ReleaseRecordView {
@@ -54,7 +50,21 @@ export interface ReleaseRecordView {
 
 export interface ReleaseDetailResponse {
   readonly release: ReleaseRecordView;
-  readonly evaluations: readonly EvaluationSummary[];
+  readonly evaluations: readonly ReleaseEvaluationSummary[];
+}
+
+/**
+ * `GET /health`.
+ *
+ * Read for one field: which payment adapter the API actually constructed. A
+ * console that cannot tell a deterministic fake from Razorpay test mode invites
+ * exactly the misreading this project cares most about avoiding.
+ */
+export interface HealthResponse {
+  readonly status: string;
+  readonly service: string;
+  readonly paymentProvider: string;
+  readonly timestamp: string;
 }
 
 /**

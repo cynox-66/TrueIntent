@@ -7,18 +7,33 @@
  *  - Every state change is a compare-and-set that reports losing the race, so
  *    application code cannot be written against a read-then-write shape that
  *    the real store would not support.
- *  - Uniqueness is enforced eagerly and surfaces as a typed result, exactly as
- *    the Postgres constraint does.
+ *  - Uniqueness is enforced eagerly, on every constraint the schema declares,
+ *    and surfaces the way the Postgres one does: as a typed result where the
+ *    caller has a branch for it, and as a throw where it does not.
+ *  - Ordering matches the SQL, including under a limit. A store that filtered
+ *    in insertion order and then truncated would hand a sweeper a *different
+ *    set of work* from the one production would pick up.
  *  - Every mutating method performs its read and its write in one synchronous
  *    block, with no `await` in between. On a single-threaded event loop that
  *    makes the operation genuinely atomic with respect to other tasks in this
  *    process.
  *
- * The honest limit: that last property holds *within one process only*. It
- * proves the application logic has the right shape; it cannot prove the system
- * is safe across several API instances sharing a database. Only the Postgres
- * suite can, which is why the concurrency tests are duplicated there. See
- * ADR-010.
+ * Each uniqueness check below names the Postgres constraint it stands in for.
+ * That naming is not decoration: `parity.db.test.ts` runs the same sequences
+ * against both stores and compares the constraint that fired, so a constraint
+ * renamed in SQL and not here fails the build.
+ *
+ * Deliberately NOT modelled, because reimplementing a relational store inside a
+ * test double costs more than it proves: foreign keys between tables, and the
+ * CHECK constraints the type system already covers. Every production write goes
+ * through a service that has resolved its parent row first, and the parity
+ * suite asserts those Postgres-only refusals directly so the boundary is
+ * explicit rather than assumed.
+ *
+ * The honest limit: atomicity here holds *within one process only*. It proves
+ * the application logic has the right shape; it cannot prove the system is safe
+ * across several API instances sharing a database. Only the Postgres suite can,
+ * which is why the concurrency tests are duplicated there. See ADR-010.
  */
 
 import { CaptureLockError } from '@capturelock/core';
@@ -42,6 +57,7 @@ import type {
   ReviewRecord,
   ReviewRepository,
   ReviewState,
+  Sha256Hex,
   SnapshotId,
   SnapshotRepository,
   Timestamp,
@@ -58,13 +74,28 @@ import {
   timestampToEpochMillis,
 } from '@capturelock/core';
 
+/**
+ * The refusal a unique index produces, carrying which index it was.
+ *
+ * `constraint` holds the Postgres constraint name so a caller — and the parity
+ * suite — can tell one uniqueness rule from another. `pg` reports the same
+ * value on its own error object, which is what makes the two comparable.
+ */
+function uniqueViolation(constraint: string, detail: string): CaptureLockError {
+  return new CaptureLockError(
+    'UNIQUE_VIOLATION',
+    `duplicate key value violates unique constraint "${constraint}": ${detail}`,
+    { constraint },
+  );
+}
+
 export class InMemoryAuthorizationRepository implements AuthorizationRepository {
   /** Exposed so InMemoryUnitOfWork can snapshot and restore it on rollback. */
   readonly rows = new Map<string, AuthorizationRecord>();
 
   async insert(record: AuthorizationRecord): Promise<void> {
     if (this.rows.has(record.authorizationId)) {
-      throw new CaptureLockError('UNIQUE_VIOLATION', 'Authorization already exists');
+      throw uniqueViolation('authorizations_pkey', record.authorizationId);
     }
     this.rows.set(record.authorizationId, record);
   }
@@ -97,7 +128,16 @@ export class InMemorySnapshotRepository implements SnapshotRepository {
 
   async insert(snapshot: VerifiedSnapshot): Promise<void> {
     if (this.rows.has(snapshot.snapshotId)) {
-      throw new CaptureLockError('UNIQUE_VIOLATION', 'Snapshot already exists');
+      throw uniqueViolation('verified_snapshots_pkey', snapshot.snapshotId);
+    }
+    // `snapshot_hash` is UNIQUE in the schema: it is the content address of a
+    // priced cart, so two rows sharing one would be two snapshots claiming to
+    // be the same quote — and the snapshot stage compares that hash to decide
+    // whether the cart it is verifying is the one the server issued.
+    for (const row of this.rows.values()) {
+      if (row.snapshotHash === snapshot.snapshotHash) {
+        throw uniqueViolation('verified_snapshots_snapshot_hash_key', snapshot.snapshotHash);
+      }
     }
     this.rows.set(snapshot.snapshotId, snapshot);
   }
@@ -128,6 +168,19 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
   readonly byIdempotencyKey = new Map<string, string>();
   readonly byReceipt = new Map<string, string>();
 
+  /**
+   * Insert, with every constraint the `releases` table declares.
+   *
+   * Two of them have a typed result because the caller has a branch for them
+   * and reports a distinct reason code; the rest throw, which is exactly what
+   * the Postgres implementation does — it catches the unique violation, checks
+   * for those two cases, and rethrows anything else.
+   *
+   * The precedence matters and is asserted by the parity suite: when a request
+   * both reuses an idempotency key and targets a busy authorization, the caller
+   * must be told about the key, because "you already asked me this" and "that
+   * mandate is already being spent" send an agent to different places.
+   */
   async insert(record: ReleaseRecord): Promise<InsertReleaseResult> {
     const existingByKey = this.byIdempotencyKey.get(record.clientIdempotencyKey);
     if (existingByKey !== undefined) {
@@ -142,10 +195,47 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
       }
     }
 
+    if (this.rows.has(record.releaseId)) {
+      throw uniqueViolation('releases_pkey', record.releaseId);
+    }
+    // The receipt is derived from (authorization, snapshot hash) and is UNIQUE.
+    // A duplicate means the same cart is about to be sent to the provider under
+    // a second release — which is the thing the derivation exists to prevent,
+    // so the store must refuse rather than quietly re-point its index.
+    if (this.byReceipt.has(record.receipt)) {
+      throw uniqueViolation('releases_receipt_key', record.receipt);
+    }
+    this.assertProviderIdsFree(record.releaseId, record.providerOrderId, record.providerPaymentId);
+
     this.rows.set(record.releaseId, record);
     this.byIdempotencyKey.set(record.clientIdempotencyKey, record.releaseId);
     this.byReceipt.set(record.receipt, record.releaseId);
     return { kind: 'INSERTED', release: record };
+  }
+
+  /**
+   * `provider_order_id` and `provider_payment_id` are both UNIQUE.
+   *
+   * The payment one is the load-bearing constraint of the pair: it is what
+   * makes "one release per payment" true. Without it a webhook naming a payment
+   * already bound elsewhere could bind it a second time, and the capture gate
+   * would later present that payment id to the provider with *this* release's
+   * amount. The fake not modelling it meant no offline test could see that.
+   */
+  private assertProviderIdsFree(
+    releaseId: string,
+    orderId: string | null | undefined,
+    paymentId: string | null | undefined,
+  ): void {
+    for (const row of this.rows.values()) {
+      if (row.releaseId === releaseId) continue;
+      if (orderId != null && row.providerOrderId === orderId) {
+        throw uniqueViolation('releases_provider_order_id_key', orderId);
+      }
+      if (paymentId != null && row.providerPaymentId === paymentId) {
+        throw uniqueViolation('releases_provider_payment_id_key', paymentId);
+      }
+    }
   }
 
   async findById(id: ReleaseId): Promise<ReleaseRecord | null> {
@@ -195,6 +285,11 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
     const current = this.rows.get(id);
     if (current === undefined || !from.includes(current.state)) return null;
 
+    // The unique indexes apply to an UPDATE exactly as they do to an INSERT.
+    // Checked before the write so a refused transition leaves the row alone,
+    // which is what the failed statement does.
+    this.assertProviderIdsFree(id, patch.providerOrderId, patch.providerPaymentId);
+
     const next: ReleaseRecord = {
       ...current,
       state: to,
@@ -213,41 +308,54 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
     return next;
   }
 
+  /**
+   * Oldest in-flight first, then truncated — in that order.
+   *
+   * Filtering in insertion order and truncating afterwards returns a different
+   * *set*, not merely a different order, so under a limit the sweeper would
+   * pick up different work here than in production. Sorted first for the same
+   * reason `listRequiringOperatorAttention` is.
+   */
   async findRequiringReconciliation(
     olderThan: Timestamp,
     limit: number,
   ): Promise<readonly ReleaseRecord[]> {
     const cutoff = timestampToEpochMillis(olderThan);
-    const out: ReleaseRecord[] = [];
-    for (const row of this.rows.values()) {
-      if (row.inFlightSince === null) continue;
-      if (timestampToEpochMillis(row.inFlightSince) > cutoff) continue;
-      if (
-        row.state === 'ORDER_IN_FLIGHT' ||
-        row.state === 'ORDER_INDETERMINATE' ||
-        row.state === 'CAPTURE_IN_FLIGHT' ||
-        row.state === 'CAPTURE_INDETERMINATE'
-      ) {
-        out.push(row);
-      }
-      if (out.length >= limit) break;
-    }
-    return out;
+    return [...this.rows.values()]
+      .filter(
+        row =>
+          row.inFlightSince !== null &&
+          timestampToEpochMillis(row.inFlightSince) <= cutoff &&
+          (row.state === 'ORDER_IN_FLIGHT' ||
+            row.state === 'ORDER_INDETERMINATE' ||
+            row.state === 'CAPTURE_IN_FLIGHT' ||
+            row.state === 'CAPTURE_INDETERMINATE'),
+      )
+      .sort(
+        (a, b) =>
+          timestampToEpochMillis(a.inFlightSince!) - timestampToEpochMillis(b.inFlightSince!) ||
+          a.releaseId.localeCompare(b.releaseId),
+      )
+      .slice(0, limit);
   }
 
+  /** Oldest-updated first, then truncated. Same reasoning as above. */
   async findAbandonedInTransientState(
     olderThan: Timestamp,
     limit: number,
   ): Promise<readonly ReleaseRecord[]> {
     const cutoff = timestampToEpochMillis(olderThan);
-    const out: ReleaseRecord[] = [];
-    for (const row of this.rows.values()) {
-      if (!isTransientReleaseState(row.state)) continue;
-      if (timestampToEpochMillis(row.updatedAt) > cutoff) continue;
-      out.push(row);
-      if (out.length >= limit) break;
-    }
-    return out;
+    return [...this.rows.values()]
+      .filter(
+        row =>
+          isTransientReleaseState(row.state) && timestampToEpochMillis(row.updatedAt) <= cutoff,
+      )
+      .sort(
+        (a, b) =>
+          timestampToEpochMillis(a.updatedAt) - timestampToEpochMillis(b.updatedAt) ||
+          a.releaseId.localeCompare(b.releaseId),
+      )
+      .slice(0, limit);
   }
 
   async listRequiringOperatorAttention(limit: number): Promise<readonly ReleaseRecord[]> {
@@ -279,7 +387,7 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
 
   async append(record: EvaluationRecord): Promise<void> {
     if (this.rows.has(record.evaluationId)) {
-      throw new CaptureLockError('UNIQUE_VIOLATION', 'Evaluation already recorded');
+      throw uniqueViolation('evaluations_pkey', record.evaluationId);
     }
     this.rows.set(record.evaluationId, record);
   }
@@ -288,8 +396,22 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     return this.rows.get(id) ?? null;
   }
 
+  /**
+   * Oldest first, with the id breaking ties.
+   *
+   * Not cosmetic: the console reads the last evaluation recorded at each gate
+   * to decide which two verdicts it is contrasting, so a store that returned
+   * them in insertion order rather than chronological order would show a
+   * different story from production for the same release.
+   */
   async listByRelease(id: ReleaseId): Promise<readonly EvaluationRecord[]> {
-    return [...this.rows.values()].filter(row => row.releaseId === id);
+    return [...this.rows.values()]
+      .filter(row => row.releaseId === id)
+      .sort(
+        (a, b) =>
+          timestampToEpochMillis(a.evaluatedAt) - timestampToEpochMillis(b.evaluatedAt) ||
+          a.evaluationId.localeCompare(b.evaluationId),
+      );
   }
 
   count(): number {
@@ -320,7 +442,17 @@ export class InMemoryWebhookInboxRepository implements WebhookInboxRepository {
   ): Promise<void> {
     const current = this.rows.get(providerEventId);
     if (current === undefined) return;
-    this.rows.set(providerEventId, { ...current, status, processedAt: at, releaseId });
+    // `COALESCE(release_id, ...)` in the SQL: a null here means "not supplied",
+    // never "clear it". The release id on an inbox row is the only record of
+    // which release an event was applied to, and the service calls this with
+    // null on the paths where no release matched — which must not erase a
+    // binding an earlier call established.
+    this.rows.set(providerEventId, {
+      ...current,
+      status,
+      processedAt: at,
+      releaseId: releaseId ?? current.releaseId,
+    });
   }
 
   async findByEventId(providerEventId: string): Promise<WebhookInboxRecord | null> {
@@ -335,19 +467,28 @@ export class InMemoryWebhookInboxRepository implements WebhookInboxRepository {
 export class InMemoryReviewRepository implements ReviewRepository {
   readonly rows = new Map<string, ReviewRecord>();
 
+  /**
+   * Insert, matching `INSERT ... ON CONFLICT (review_id) DO NOTHING`.
+   *
+   * The two rules are checked in the order the statement applies them. A
+   * repeated review id is a no-op — the stored row wins, and the partial index
+   * is never consulted. Only a *new* id competing for the one open slot raises.
+   *
+   * Overwriting on a repeated id, which is what this used to do, silently
+   * replaced a resolved review with a fresh OPEN one: an approval, its operator
+   * and its binding erased from a table that is part of the audit record, while
+   * Postgres kept all three. That is the divergence that let the capture-gate
+   * approval defect hide.
+   */
   async insert(record: ReviewRecord): Promise<void> {
-    // Models `reviews_one_open_per_release`, the partial unique index on
-    // (release_id) WHERE state = 'OPEN'. Postgres raises on the second open
-    // review for a release, and a fake that accepted it would let a test
-    // exercise a state the production store cannot hold — the operator queue
-    // would show two live decisions for one release, and resolving either would
-    // leave the other dangling. Found by the Postgres parity suite.
+    if (this.rows.has(record.reviewId)) return;
+
+    // `reviews_one_open_per_release`: at most one open review per release, so
+    // the operator queue can never show two live decisions for one release.
     if (record.state === 'OPEN') {
       for (const row of this.rows.values()) {
         if (row.releaseId === record.releaseId && row.state === 'OPEN') {
-          throw new Error(
-            `duplicate key value violates unique constraint "reviews_one_open_per_release"`,
-          );
+          throw uniqueViolation('reviews_one_open_per_release', record.releaseId);
         }
       }
     }
@@ -365,9 +506,18 @@ export class InMemoryReviewRepository implements ReviewRepository {
     return null;
   }
 
-  async findLatestApprovedByRelease(id: ReleaseId): Promise<ReviewRecord | null> {
+  async findApprovedByReleaseAndBinding(
+    id: ReleaseId,
+    boundTo: Sha256Hex,
+  ): Promise<ReviewRecord | null> {
     const approved = [...this.rows.values()]
-      .filter(row => row.releaseId === id && row.state === 'APPROVED' && row.resolvedAt !== null)
+      .filter(
+        row =>
+          row.releaseId === id &&
+          row.state === 'APPROVED' &&
+          row.resolvedAt !== null &&
+          row.snapshotHash === boundTo,
+      )
       .sort(
         (a, b) =>
           timestampToEpochMillis(b.resolvedAt!) - timestampToEpochMillis(a.resolvedAt!) ||

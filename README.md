@@ -80,14 +80,15 @@ agent behaviour. See [`docs/evaluation/EVALUATION_PLAN.md`](docs/evaluation/EVAL
 
 ## Design decisions worth knowing about
 
-|                                                    |                                                                                                                                                                                                               |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The kernel is a pure function.**                 | No I/O, no clock, no randomness. That is what makes a decision replayable from evidence, and it is enforced by a lint rule and an architecture test, not just intended.                                       |
-| **Stages cannot approve anything.**                | A stage reports findings; one combiner decides. ALLOW requires every mandatory stage to have completed with nothing found. A stage that throws yields DENY — tested by injecting a fault into every position. |
-| **Freshness compares terms, not memories.**        | Not "does the agent's remembered hash match live?" — a malicious agent just sends the current hash. It is "do the terms about to be charged match what the merchant will honour now?"                         |
-| **Duplicate prevention is a database constraint.** | A partial unique index allows one non-terminal release per authorization. Ten concurrent requests: one succeeds, nine are rejected by Postgres.                                                               |
-| **Indeterminate is not failure.**                  | Razorpay's capture is not idempotent and its order create rejects duplicate receipts, so a blind retry is _wrong_. There is no edge back into an in-flight state; recovery asks the provider what it knows.   |
-| **Probabilistic components may only restrict.**    | The advisory intent layer can lower a verdict, never raise one. A prompt-injected reviewer cannot approve anything, and the "fail open or closed on timeout?" question dissolves.                             |
+|                                                    |                                                                                                                                                                                                                                        |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The kernel is a pure function.**                 | No I/O, no clock, no randomness. That is what makes a decision replayable from evidence, and it is enforced by a lint rule and an architecture test, not just intended.                                                                |
+| **Stages cannot approve anything.**                | A stage reports findings; one combiner decides. ALLOW requires every mandatory stage to have completed with nothing found. A stage that throws yields DENY — tested by injecting a fault into every position.                          |
+| **Freshness compares terms, not memories.**        | Not "does the agent's remembered hash match live?" — a malicious agent just sends the current hash. It is "do the terms about to be charged match what the merchant will honour now?"                                                  |
+| **Duplicate prevention is a database constraint.** | A partial unique index allows one non-terminal release per authorization. Ten concurrent requests: one succeeds, nine are rejected by Postgres.                                                                                        |
+| **Indeterminate is not failure.**                  | Razorpay's capture is not idempotent and its order create rejects duplicate receipts, so a blind retry is _wrong_. There is no edge back into an in-flight state; recovery asks the provider what it knows.                            |
+| **Probabilistic components may only restrict.**    | The advisory intent layer can lower a verdict, never raise one. A prompt-injected reviewer cannot approve anything, and the "fail open or closed on timeout?" question dissolves.                                                      |
+| **The test double is checked, not trusted.**       | 44 cases run one operation sequence against the in-memory store and against Postgres and compare what a caller can observe — including _which_ constraint refused a write. A fake that quietly diverged is how a real defect once hid. |
 
 ## Quickstart
 
@@ -98,11 +99,15 @@ cp .env.example .env
 pnpm db:up && pnpm db:migrate   # Postgres schema from scratch
 pnpm dev                        # API on :3000, Postgres, fake provider
 
-pnpm scenario       # 7 end-to-end lifecycle scenarios
+pnpm demo           # the walkthrough, asserted at every step (needs `pnpm dev`)
+pnpm demo review    #   …the operator flow: paused, approved, re-verified
+pnpm demo happy     #   …verified at both gates, then captured
+
+pnpm scenario       # 9 end-to-end lifecycle scenarios
 pnpm eval           # baseline vs CaptureLock → reports/
 
-pnpm test           # 493 offline + 32 console tests, no Docker
-pnpm test:db        # 38 tests against real Postgres
+pnpm test           # 519 offline + 42 console tests, no Docker
+pnpm test:db        # 85 tests against real Postgres, incl. 44 parity cases
 pnpm web            # operator console at :5173, proxying the API
 pnpm smoke:razorpay         # opt-in: live order semantics
 pnpm smoke:razorpay:capture # opt-in: live capture semantics (one browser step)
@@ -116,41 +121,53 @@ The one that matters: approved at the order gate, refused at capture, provider
 never called.
 
 ```bash
-AGENT='-H content-type:application/json -H x-capturelock-user:user_priya -H x-capturelock-session:sess_01'
-ISSUER="$AGENT -H x-capturelock-issuer-key:dev-issuer-key-not-for-production"
-
-# 1. the USER's application issues the mandate. The agent cannot do this —
-#    without the issuer key it gets 403, which is the point.
-AUTH=$(curl -s $ISSUER -XPOST localhost:3000/v1/authorizations \
-  -d @docs/examples/authorization.json | jq -r .authorizationId)
-
-# 2. the agent proposes SKUs. CaptureLock prices the cart from live state.
-SNAP=$(curl -s $AGENT -XPOST localhost:3000/v1/authorizations/$AUTH/quotes \
-  -d '{"merchantId":"merchant_alpha","lines":[{"sku":"SKU-BLK-RUN-42","quantity":1}],
-       "shipTo":{"country":"IN","region":null},"recurring":false}' | jq -r .snapshotId)
-
-# 3. gate 1 → ALLOW, order created. No money has moved.
-REL=$(curl -s $AGENT -XPOST localhost:3000/v1/releases \
-  -d "{\"authorizationId\":\"$AUTH\",\"snapshotId\":\"$SNAP\",\"idempotencyKey\":\"idem-demo-0000001\"}" \
-  | jq -r .releaseId)
-
-# 4. the payer authorizes (a genuinely signed webhook through the real route)
-curl -s -XPOST localhost:3000/v1/dev/simulate-authorization \
-  -H 'content-type: application/json' -d "{\"releaseId\":\"$REL\"}" | jq -r .webhook.state
-
-# 5. the merchant raises the price
-curl -s -XPOST localhost:3000/v1/dev/catalog -H 'content-type: application/json' \
-  -d '{"kind":"SET_PRICE","sku":"SKU-BLK-RUN-42","unitPriceMinor":549900}' >/dev/null
-
-# 6. gate 2 → 422 DENY, LIVE_PRICE_DIVERGED. The provider is never called.
-curl -s $AGENT -XPOST localhost:3000/v1/releases/$REL/capture \
-  -d '{"idempotencyKey":"idem-demo-0000002"}' | jq '{verdict, state, reasonCodes, moneyMoved}'
-
-# 7. replay that refusal from its evidence
-curl -s localhost:3000/v1/evidence/<envelopeId> | jq .replay   # → {"reproduced": true}
+pnpm dev      # in one terminal
+pnpm demo     # in another
 ```
 
-Or just run `pnpm scenario 2-price-drift`.
+`pnpm demo` makes the same requests an agent, an issuer and an operator would
+make — with exactly the headers each of those parties holds, and no privileged
+access of any kind — and **asserts what it expects at every step**, exiting
+non-zero the moment reality disagrees. So it is a check as well as a
+demonstration:
+
+```
+3. Gate 1: the order gate.
+   ALLOW → ORDER_CREATED, order order_fake_…
+   moneyMoved: false — an order is not a charge
+
+5. The merchant raises the price. CaptureLock is told nothing.
+   INR 4799.00 → INR 5499.00 in the merchant's catalogue.
+
+6. Gate 2: the capture gate. The kernel runs again against a fresh live read.
+   DENY → DENIED (LIVE_PRICE_DIVERGED)
+   moneyMoved: false. The provider was never asked to capture.
+
+7. Replay that decision from its evidence.
+   reproduced: true (a488f53c9324b41f…)
+```
+
+Two more:
+
+```bash
+pnpm demo review   # paused at BOTH gates, approved by a human, still re-verified
+pnpm demo happy    # verified twice, captured, and the mandate cannot be respent
+```
+
+Then open the console at `pnpm web` and look at the release: the two verdicts
+side by side, the time between them, and the two prices that differ.
+
+> [!NOTE]
+> The walkthrough used to be a block of `curl` commands sharing header strings
+> through shell variables. That form is silently broken under **zsh**, which
+> does not word-split an unquoted parameter expansion — every request comes back
+> `400` with no hint as to why. zsh has been the macOS default since Catalina,
+> so the most likely reader was the one guaranteed to hit it. If you want the
+> raw HTTP, read [`scripts/demo.mts`](scripts/demo.mts); it is one call per
+> step with the headers spelled out.
+
+The same paths, without a server: `pnpm scenario 2-price-drift`,
+`pnpm scenario 8-operator-approval`.
 
 ## API
 
@@ -192,7 +209,7 @@ packages/integrations  Razorpay adapter + deterministic fakes
 packages/persistence   SQL schema, Postgres and in-memory repositories
 apps/api               thin HTTP layer
 apps/eval              baseline-versus-CaptureLock harness
-docs/decisions         ADR-001..010 — why, and what was rejected
+docs/decisions         ADR-001..018 — why, and what was rejected
 ```
 
 ## What is NOT guaranteed
@@ -203,9 +220,15 @@ exist. In full in [`docs/security/SECURITY_MODEL.md`](docs/security/SECURITY_MOD
 - **Not exactly-once end to end.** At-most-once money movement, plus
   eventually-consistent knowledge of settlement. After an indeterminate capture
   we do not know whether money moved until reconciliation succeeds.
-- **Capture semantics are unverified against the live API.** The smoke test
-  never captures. Order semantics _were_ measured, and two documented behaviours
-  turned out wrong — reason to treat the unmeasured half with the same suspicion.
+- **The lost-response path is unmeasured.** Capture semantics themselves _were_
+  measured live — a full authorize → capture lifecycle, `payment_capture: 0`
+  holding a payment at `authorized`, and the exact duplicate-capture wording
+  ([ADR-016](docs/decisions/ADR-016-live-capture-verification.md)). What cannot
+  be induced on demand is a genuinely lost response, so `CAPTURE_INDETERMINATE`
+  is reached by injecting a timeout into a fake.
+- **`RETRY_VELOCITY_EXCEEDED` counts attempts, not a rate.** No per-attempt
+  timestamps are persisted, so `VELOCITY_WINDOW_SECONDS` is carried into the
+  finding for context and bounds nothing.
 - **Grant single-use is per-process.** Two API instances do not share a
   consumed-nonce set.
 - **Signing-key compromise forges history.** The key is a local environment

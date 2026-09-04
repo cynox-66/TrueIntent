@@ -152,20 +152,27 @@ transaction and recorded in `schema_migrations`. `pnpm db:migrate`,
 | Session expiration horizon       | Per-authorization `notBefore`/`notAfter` plus a snapshot freshness window                                            |
 | Human approval channel for PAUSE | `POST /v1/reviews/:id/resolve`, separate principal, re-verifies on approval                                          |
 
-| Question                        | Resolution                                                                                                                    |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Transaction boundaries          | Unit of work; three commits around the provider call — [ADR-011](../decisions/ADR-011-unit-of-work-and-stranded-releases.md)  |
-| Enforcing the grant             | Grant-gated executor, split ports, separated HTTP authority — [ADR-012](../decisions/ADR-012-grant-as-enforced-capability.md) |
-| Request-level idempotency       | A third, request-scoped layer — [ADR-013](../decisions/ADR-013-request-scoped-idempotency.md)                                 |
-| Driving a payment to authorized | A genuinely signed webhook through the real route — [ADR-014](../decisions/ADR-014-simulated-payer-authorization.md)          |
-| What Razorpay actually does     | Measured; two documented behaviours are wrong — [ADR-015](../decisions/ADR-015-razorpay-reality.md)                           |
+| Question                        | Resolution                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Transaction boundaries          | Unit of work; three commits around the provider call — [ADR-011](../decisions/ADR-011-unit-of-work-and-stranded-releases.md)               |
+| Enforcing the grant             | Grant-gated executor, split ports, separated HTTP authority — [ADR-012](../decisions/ADR-012-grant-as-enforced-capability.md)              |
+| Request-level idempotency       | A third, request-scoped layer — [ADR-013](../decisions/ADR-013-request-scoped-idempotency.md)                                              |
+| Driving a payment to authorized | A genuinely signed webhook through the real route — [ADR-014](../decisions/ADR-014-simulated-payer-authorization.md)                       |
+| What Razorpay actually does     | Measured; two documented behaviours are wrong — [ADR-015](../decisions/ADR-015-razorpay-reality.md)                                        |
+| Live capture, end to end        | `payment_capture: 0`, the capture gate, and duplicate capture, all observed — [ADR-016](../decisions/ADR-016-live-capture-verification.md) |
 
 ## 10. What remains open
 
-- **Capture semantics are unverified against the live API.** The smoke test
-  never captures, so the non-idempotent-capture behaviour that
-  `CAPTURE_INDETERMINATE` is built on still rests on documentation alone. The
-  largest gap between what is tested and what is claimed.
+- **Capture semantics were measured against the live API** and are no longer the
+  open question they were. A full authorize → capture lifecycle was run in test
+  mode: `payment_capture: 0` genuinely holds a payment at `authorized`, the
+  capture gate ran before the provider call, and a re-capture returned
+  `"This payment has already been captured"` — the exact wording the adapter
+  maps to `ALREADY_CAPTURED`, pinned as a fixture. See
+  [ADR-016](../decisions/ADR-016-live-capture-verification.md). What remains
+  unmeasured is the _lost-response_ path itself: `CAPTURE_INDETERMINATE` is
+  reached by injecting a timeout into a fake, because a real one cannot be
+  induced on demand.
 - **Evidence key management.** A local environment key. An attacker holding it
   can forge history; production needs an HSM or KMS plus external anchoring.
 - **A real merchant integration.** The live-state provider is a deterministic

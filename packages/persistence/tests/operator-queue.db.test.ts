@@ -298,18 +298,19 @@ describe('listOpen against Postgres', () => {
     expect(listed.map(r => r.reviewId)).toEqual([open]);
   });
 
-  it('returns the latest approval, which the kernel consumes', async () => {
+  it('returns the latest approval for a binding, which the kernel consumes', async () => {
     // The kernel reads this to clear the pause findings a human accepted. If it
     // returned the wrong review — or an unresolved one — an approval would
     // either not apply or would apply the wrong reason codes.
     const release = await put('PAUSED', AT, 'a');
     const older = newReviewId();
     const newer = newReviewId();
+    const binding = hash('capturelock.v1.snapshot', { r: release.releaseId });
 
     const base = {
       releaseId: release.releaseId,
       authorizationId: release.authorizationId,
-      snapshotHash: hash('capturelock.v1.snapshot', { r: release.releaseId }),
+      snapshotHash: binding,
       reasonCodes: ['TOTAL_EXCEEDS_LIMIT'],
       state: 'OPEN' as const,
       createdAt: AT,
@@ -327,9 +328,39 @@ describe('listOpen against Postgres', () => {
       asTimestamp('2026-09-03T12:00:00.000Z'),
     );
 
-    const found = await reviews.findLatestApprovedByRelease(release.releaseId);
+    const found = await reviews.findApprovedByReleaseAndBinding(release.releaseId, binding);
     expect(found?.reviewId).toBe(newer);
     expect(found?.resolvedBy).toBe('operator_two');
+  });
+
+  it('never returns an approval bound to a different request', async () => {
+    // Parity with the in-memory suite, and the property the kernel depends on:
+    // a release that paused at both gates carries an approval per gate, and
+    // each is visible only to the request it was given for.
+    const release = await put('PAUSED', AT, 'binding');
+    const orderBinding = hash('capturelock.v1.request_fingerprint', { gate: 'ORDER_CREATION' });
+    const captureBinding = hash('capturelock.v1.request_fingerprint', { gate: 'CAPTURE' });
+    const atOrderGate = newReviewId();
+
+    await reviews.insert({
+      reviewId: atOrderGate,
+      releaseId: release.releaseId,
+      authorizationId: release.authorizationId,
+      snapshotHash: orderBinding,
+      reasonCodes: ['TOTAL_EXCEEDS_LIMIT'],
+      state: 'OPEN',
+      createdAt: AT,
+      resolvedAt: null,
+      resolvedBy: null,
+    });
+    await reviews.resolve(atOrderGate, 'APPROVED', 'operator_one', AT);
+
+    expect(
+      (await reviews.findApprovedByReleaseAndBinding(release.releaseId, orderBinding))?.reviewId,
+    ).toBe(atOrderGate);
+    expect(
+      await reviews.findApprovedByReleaseAndBinding(release.releaseId, captureBinding),
+    ).toBeNull();
   });
 
   it('never returns an open or rejected review as an approval', async () => {
@@ -347,11 +378,21 @@ describe('listOpen against Postgres', () => {
       resolvedBy: null,
     });
     // Still OPEN: not an approval.
-    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+    expect(
+      await reviews.findApprovedByReleaseAndBinding(
+        release.releaseId,
+        hash('capturelock.v1.snapshot', { n: 1 }),
+      ),
+    ).toBeNull();
 
     await reviews.resolve(rejected, 'REJECTED', 'operator_dev', AT);
     // Rejected: emphatically not an approval.
-    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+    expect(
+      await reviews.findApprovedByReleaseAndBinding(
+        release.releaseId,
+        hash('capturelock.v1.snapshot', { n: 1 }),
+      ),
+    ).toBeNull();
   });
 
   it('orders oldest first and stays stable on identical timestamps', async () => {

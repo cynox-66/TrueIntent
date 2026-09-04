@@ -117,7 +117,12 @@ export async function resolveContext(
     principal: input.principal,
   });
 
-  // The operator's decision, if one has been recorded for this release.
+  // The operator's decision for *this* request, if one has been recorded.
+  //
+  // Looked up by the fingerprint rather than by recency. A release can carry
+  // more than one approval — one per gate it paused at — and asking for "the
+  // latest" handed the kernel the order-gate approval while a capture-gate
+  // approval sat unused, so the capture could never proceed.
   //
   // Loaded here rather than inside a stage because everything asynchronous
   // belongs on this side of the boundary; the kernel then applies it as
@@ -125,7 +130,9 @@ export async function resolveContext(
   const approvedReview: ApprovedReview | null =
     input.release === null
       ? null
-      : toApprovedReview(await deps.reviews.findLatestApprovedByRelease(input.release.releaseId));
+      : toApprovedReview(
+          await deps.reviews.findApprovedByReleaseAndBinding(input.release.releaseId, fingerprint),
+        );
 
   const context = deepFreeze<VerificationContext>({
     gate: input.gate,
@@ -146,7 +153,17 @@ export async function resolveContext(
           : otherActiveRelease,
       approvedReview,
       requestFingerprint: fingerprint,
-      attemptsInWindow: (input.release?.attemptCount ?? 0) + 1,
+      // The counter as it stands, NOT one more.
+      //
+      // Both gates commit their entry transition with `incrementAttempt`
+      // *before* this runs, so `attemptCount` already includes the attempt
+      // being evaluated. Adding one counted it twice: a release's very first
+      // request reported two attempts, and the default limit of three was
+      // reached a whole attempt early — which made the documented
+      // pause → approve → retry flow at the capture gate trip
+      // RETRY_VELOCITY_EXCEEDED on the retry, pausing again for a finding no
+      // operator had been shown.
+      attemptsInWindow: input.release?.attemptCount ?? 0,
       velocityWindowSeconds: deps.config.velocityWindowSeconds,
       maxAttemptsInWindow: deps.config.maxAttemptsInWindow,
     },

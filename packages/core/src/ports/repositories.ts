@@ -219,16 +219,26 @@ export interface ReviewRepository {
    */
   listOpen(limit: number): Promise<readonly ReviewRecord[]>;
   /**
-   * The most recent APPROVED review for a release, if any.
+   * The APPROVED review for a release that is bound to `boundTo`, if any.
    *
    * The kernel reads this so an operator's approval can actually clear the
    * findings it covers. Without it, re-verification after an approval
    * reproduces the same PAUSE and the review loop never terminates.
    *
-   * Most recent, not first: a release can pause more than once, and it is the
-   * latest decision that reflects what a human currently believes.
+   * Selected by binding rather than by recency, and that is the security-
+   * relevant part. A release can pause more than once — at the order gate, and
+   * again at the capture gate — and the binding names the gate as well as the
+   * cart. Returning "the latest approval" meant handing the kernel an approval
+   * for a *different* request and letting it discover the mismatch, which in
+   * practice returned the order-gate approval to the capture gate and left a
+   * genuine capture-gate approval unusable. Asking the question the kernel
+   * actually has ("is there an approval for THIS request?") cannot do that.
+   *
+   * The kernel re-checks the binding itself. This is not redundant: a
+   * security property that rests on a caller's query being written correctly is
+   * one refactor away from being lost.
    */
-  findLatestApprovedByRelease(id: ReleaseId): Promise<ReviewRecord | null>;
+  findApprovedByReleaseAndBinding(id: ReleaseId, boundTo: Sha256Hex): Promise<ReviewRecord | null>;
   /** CAS from OPEN to a resolution. Returns null if already resolved. */
   resolve(
     id: ReviewId,

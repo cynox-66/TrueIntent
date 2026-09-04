@@ -143,6 +143,25 @@ the older documents should treat these as authoritative:
     may have acted → only reconciliation may resolve it). An unclassified state is
     invisible to both sweeps and will strand releases.
 
+### Additional non-negotiables established in Phase 5
+
+30. **A constraint in the schema must be modelled by the in-memory store, and
+    asserted by `parity.db.test.ts`.** A constraint Postgres enforces and the
+    fake does not is an offline suite that passes for a reason that is not true
+    in production — which is how the capture-gate approval defect stayed hidden.
+    Each check in the fake names the Postgres constraint it stands in for, and
+    the parity suite compares that name, so a rename cannot rot the
+    correspondence silently.
+31. **When the two stores disagree, the fake changes.** Never loosen SQL to match
+    a double; that is deleting a safety property to make a test pass. The only
+    changes permitted on the SQL side are ones that make an _under-specified_
+    behaviour defined — adding a tiebreak to an ordering, for instance, so a
+    limit returns a stable set.
+32. **What the fake cannot model must be asserted against Postgres explicitly.**
+    Foreign keys, process-restart durability and cross-process isolation are out
+    of its reach. Say so in the code, and put the assertion in the Postgres-only
+    block, so the boundary is checked rather than assumed.
+
 ### Additional non-negotiables established in Phase 1
 
 20. **The verification kernel must stay a pure function.** No I/O, no clock, no

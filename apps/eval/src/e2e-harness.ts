@@ -32,6 +32,7 @@ import {
   QuoteService,
   ReconciliationService,
   ReleaseService,
+  ReviewService,
   WebhookService,
   DEFAULT_KERNEL_CONFIG,
   paymentReaderOf,
@@ -132,6 +133,38 @@ export const POLICY: PolicyDocument = {
   ],
 };
 
+/**
+ * A policy whose spend ceiling pauses rather than denies.
+ *
+ * Every rule in `POLICY` is a DENY, so a release bound to it can only ever be
+ * allowed or refused outright — the PAUSE path, and with it the entire operator
+ * review flow, is unreachable. PAUSE severity is the one thing a policy author
+ * may choose, precisely because the policy is server-side and bound at
+ * issuance, so an agent cannot select it.
+ */
+export const REVIEW_POLICY: PolicyDocument = {
+  policyId: 'household_review',
+  version: '1.0.0',
+  name: 'Household policy requiring review above a low ceiling',
+  createdAt: asTimestamp('2026-09-01T00:00:00.000Z'),
+  rules: [
+    {
+      ruleId: 'review_above_ceiling',
+      kind: 'MAX_TOTAL',
+      description: 'Spend above this ceiling needs a human',
+      severity: 'PAUSE',
+      max: inr(100_000),
+    },
+    {
+      ruleId: 'merchant_allowlist',
+      kind: 'MERCHANT_ALLOWLIST',
+      description: 'Approved merchants',
+      severity: 'DENY',
+      merchantIds: [MERCHANT],
+    },
+  ],
+};
+
 export function constraints(overrides: Partial<IntentConstraints> = {}): IntentConstraints {
   return {
     currency: 'INR',
@@ -164,6 +197,8 @@ export interface StackOptions {
   readonly fees?: readonly CartAdjustment[];
   /** Postgres connection string. Omitted means in-memory doubles. */
   readonly databaseUrl?: string;
+  /** Defaults to `POLICY`. The operator scenario binds to `REVIEW_POLICY`. */
+  readonly policy?: PolicyDocument;
 }
 
 export class Stack {
@@ -174,11 +209,13 @@ export class Stack {
   readonly quotes: QuoteService;
   readonly releases: ReleaseService;
   readonly reconciliation: ReconciliationService;
+  readonly reviews: ReviewService;
   readonly webhooks: WebhookService;
   readonly keys: EvidenceKeyPair;
   readonly backend: 'postgres' | 'memory';
   private readonly webhookVerifier: RazorpayWebhookVerifier;
   private readonly db: Database | null;
+  private readonly policy: PolicyDocument;
 
   private constructor(
     options: StackOptions,
@@ -222,7 +259,9 @@ export class Stack {
       ...core,
       paymentReader: this.deps.paymentReader,
     });
+    this.reviews = new ReviewService(core);
     this.webhooks = new WebhookService(core);
+    this.policy = options.policy ?? POLICY;
   }
 
   static async create(options: StackOptions = {}): Promise<Stack> {
@@ -283,13 +322,13 @@ export class Stack {
   }
 
   async setup(overrides: Partial<IntentConstraints> = {}): Promise<string> {
-    await this.deps.policies.insert(POLICY);
+    await this.deps.policies.insert(this.policy);
     const created = await this.authorizations.create({
       userId: USER,
       sessionId: SESSION,
       intent: this.intent(overrides),
-      policyId: POLICY.policyId,
-      policyVersion: POLICY.version,
+      policyId: this.policy.policyId,
+      policyVersion: this.policy.version,
     });
     if (created.kind !== 'CREATED') throw new Error(`setup failed: ${created.kind}`);
     return created.authorization.authorizationId;
@@ -356,6 +395,25 @@ export class Stack {
       throw new Error(`webhook was not applied: ${result.kind}`);
     }
     return payment.paymentId;
+  }
+
+  /**
+   * Resolves the review currently open on a release, as the console does.
+   *
+   * Goes through `ReviewService`, so the state machine and the evidence append
+   * are the production ones; only the HTTP layer that authenticates the
+   * operator is absent, and that layer is tested separately.
+   */
+  async resolveOpenReview(
+    releaseId: string,
+    resolution: 'APPROVED' | 'REJECTED',
+    operator: string,
+  ): Promise<{ reviewId: string; state: string }> {
+    const review = await this.deps.reviews.findOpenByRelease(releaseId as ReleaseId);
+    if (review === null) throw new Error('no open review to resolve');
+    const resolved = await this.reviews.resolve(review.reviewId, resolution, operator);
+    if (resolved.kind !== 'RESOLVED') throw new Error(`resolve failed: ${resolved.kind}`);
+    return { reviewId: review.reviewId, state: resolved.state };
   }
 
   drift(mutation: CatalogMutation): void {

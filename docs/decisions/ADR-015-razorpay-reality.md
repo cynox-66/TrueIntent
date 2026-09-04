@@ -103,3 +103,8 @@ minute. That is the honest cost of not guessing.
   alone. Verifying it needs a real authorized payment, which needs a hosted
   checkout and a human. That is the largest remaining gap between what is tested
   and what is claimed.
+
+  > **Closed by [ADR-016](ADR-016-live-capture-verification.md).** This was true
+  > when written. A full authorize → capture lifecycle was subsequently run in
+  > test mode, including the duplicate-capture wording. Left in place because an
+  > ADR records what was known at the time; the pointer is the correction.

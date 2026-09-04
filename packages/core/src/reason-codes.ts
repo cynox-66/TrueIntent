@@ -303,7 +303,12 @@ export const REASON_CODE_DEFINITIONS = {
   RETRY_VELOCITY_EXCEEDED: def(
     'EXECUTION',
     'PAUSE',
-    'Too many release attempts in the velocity window; a human should look.',
+    // Says what is measured, which is a lifetime count of attempts on this
+    // release rather than a sliding window. `velocityWindowSeconds` is carried
+    // into the finding for context but bounds nothing: per-attempt timestamps
+    // would be needed to window this, and are not persisted. Stated plainly
+    // rather than implied away — see the limitations section of the README.
+    'Too many release attempts; a human should look.',
   ),
   CONCURRENT_RELEASE_IN_PROGRESS: def(
     'EXECUTION',

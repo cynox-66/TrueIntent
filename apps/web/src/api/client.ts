@@ -21,6 +21,7 @@ import type {
   ChainVerificationResponse,
   EvidenceDetailResponse,
   EvidenceTimelineResponse,
+  HealthResponse,
   OperatorQueueResponse,
   ReconciliationResponse,
   ReleaseDetailResponse,
@@ -128,6 +129,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
  * rendering something plausible.
  */
 export const api = {
+  /**
+   * Which adapter the API is wired to, among other things.
+   *
+   * Unauthenticated, because it is the one thing a viewer should be able to
+   * establish before trusting anything else on screen.
+   */
+  health(signal?: AbortSignal): Promise<HealthResponse> {
+    return request('/health', { signal });
+  },
+
   /** Operator authority required. Doubles as the credential check at sign-in. */
   queue(operator: OperatorCredential, signal?: AbortSignal): Promise<OperatorQueueResponse> {
     return request('/v1/operator/queue', { operator, signal });

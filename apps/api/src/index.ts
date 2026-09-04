@@ -54,6 +54,40 @@ async function main(): Promise<void> {
   }
 }
 
+/**
+ * Turns a startup failure into a sentence.
+ *
+ * `void main()` on its own meant any rejection before `listen` — a
+ * misconfiguration, an unreachable database, a failed seed — surfaced as an
+ * unhandled promise rejection: thirty lines of `AggregateError [ECONNREFUSED]`
+ * and a pg-pool stack, with the actual problem ("Postgres is not running")
+ * nowhere in the first screen. That is a poor thing to read at any time and a
+ * genuinely bad one to read in front of an audience.
+ *
+ * The stack is still printed after the summary, because the summary is a guess
+ * about the common cases and the stack is the truth.
+ */
+function reportStartupFailure(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = (error as { code?: unknown } | null)?.code;
+
+  console.error('\nCaptureLock failed to start.\n');
+  if (code === 'ECONNREFUSED') {
+    console.error(
+      '  Could not reach the database named by DATABASE_URL.\n' +
+        '  Start it with:  pnpm db:up && pnpm db:migrate\n' +
+        '  Or run without one:  PERSISTENCE=memory pnpm dev\n',
+    );
+  } else if (message.includes('relation') && message.includes('does not exist')) {
+    console.error('  The database is reachable but has no schema. Run:  pnpm db:migrate\n');
+  } else {
+    console.error(`  ${message}\n`);
+  }
+  console.error('Full error follows.\n');
+  console.error(error);
+  process.exit(1);
+}
+
 if (process.env['NODE_ENV'] !== 'test') {
-  void main();
+  main().catch(reportStartupFailure);
 }

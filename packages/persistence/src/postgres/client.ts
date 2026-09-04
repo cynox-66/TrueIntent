@@ -9,10 +9,10 @@
  * and the statement without adding safety. See ADR-010.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Pool, type PoolClient } from 'pg';
+// Imported for the `migrate()` test helper below. `migrate.ts` imports only a
+// *type* from this module, so this is not a runtime cycle.
+import { runMigrations } from './migrate.js';
 
 /**
  * Anything a repository can issue SQL against.
@@ -85,10 +85,23 @@ export class Database implements Queryable {
     }
   }
 
+  /**
+   * Applies every migration, in order.
+   *
+   * This used to read `0001_init.sql` and nothing else, which meant the three
+   * suites calling `reset()` then `migrate()` ran against a schema that was not
+   * the production schema — no `idempotency_records` table, and none of the
+   * indexes 0002 adds. A test double diverging from the database is the failure
+   * this repository already had once; a *test schema* diverging from it is the
+   * same failure one level down, and harder to notice, because nothing reads
+   * as broken until a suite happens to touch the missing table.
+   *
+   * Delegates to the real runner rather than reimplementing the ordering, so
+   * there is one definition of "the schema" and adding `0003` cannot leave this
+   * behind.
+   */
   async migrate(): Promise<void> {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const sql = readFileSync(join(here, 'migrations', '0001_init.sql'), 'utf8');
-    await this.pool.query(sql);
+    await runMigrations(this);
   }
 
   /** Test helper: drops everything so a suite starts from a known state. */

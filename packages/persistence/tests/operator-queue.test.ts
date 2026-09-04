@@ -223,9 +223,10 @@ describe('open reviews', () => {
     // Mirrors the Postgres assertions in `operator-queue.db.test.ts`.
     const release = put('PAUSED', '2026-09-02T00:00:00.000Z', 'a');
     const first = openReview(release, '2026-09-02T00:00:00.000Z');
+    const binding = first.snapshotHash;
     await reviews.insert(first);
 
-    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+    expect(await reviews.findApprovedByReleaseAndBinding(release.releaseId, binding)).toBeNull();
 
     await reviews.resolve(
       first.reviewId,
@@ -233,7 +234,7 @@ describe('open reviews', () => {
       'operator_dev',
       at('2026-09-02T01:00:00.000Z'),
     );
-    expect(await reviews.findLatestApprovedByRelease(release.releaseId)).toBeNull();
+    expect(await reviews.findApprovedByReleaseAndBinding(release.releaseId, binding)).toBeNull();
 
     const second = openReview(release, '2026-09-02T02:00:00.000Z');
     await reviews.insert(second);
@@ -244,9 +245,36 @@ describe('open reviews', () => {
       at('2026-09-02T03:00:00.000Z'),
     );
 
-    const found = await reviews.findLatestApprovedByRelease(release.releaseId);
+    const found = await reviews.findApprovedByReleaseAndBinding(release.releaseId, binding);
     expect(found?.reviewId).toBe(second.reviewId);
     expect(found?.resolvedBy).toBe('operator_two');
+  });
+
+  it('never returns an approval bound to a different request', async () => {
+    // The property the kernel depends on. A release pauses at the order gate
+    // and again at the capture gate; each approval names the request it was
+    // given for, and asking with one binding must never surface the other.
+    const release = put('PAUSED', '2026-09-02T00:00:00.000Z', 'a');
+    const orderBinding = hash('capturelock.v1.request_fingerprint', { gate: 'ORDER_CREATION' });
+    const captureBinding = hash('capturelock.v1.request_fingerprint', { gate: 'CAPTURE' });
+
+    const atOrderGate = { ...openReview(release, '2026-09-02T00:00:00.000Z') };
+    await reviews.insert({ ...atOrderGate, snapshotHash: orderBinding });
+    await reviews.resolve(
+      atOrderGate.reviewId,
+      'APPROVED',
+      'operator_one',
+      at('2026-09-02T01:00:00.000Z'),
+    );
+
+    // The order-gate approval exists and is found by its own binding...
+    expect(
+      (await reviews.findApprovedByReleaseAndBinding(release.releaseId, orderBinding))?.reviewId,
+    ).toBe(atOrderGate.reviewId);
+    // ...and is invisible to the capture gate, which is the whole point.
+    expect(
+      await reviews.findApprovedByReleaseAndBinding(release.releaseId, captureBinding),
+    ).toBeNull();
   });
 
   it('orders oldest first with a total tiebreak', async () => {

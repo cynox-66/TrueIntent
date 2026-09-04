@@ -7,12 +7,22 @@
  * surprise; the console imports the same types (type-only, so nothing from the
  * API is bundled into the browser).
  *
- * Only the *operator* endpoints live here. The rest of the API returns domain
- * records directly, and inventing wrapper types for those would add a layer
- * that has to be kept in step for no benefit.
+ * Only the endpoints the console reads live here. The rest of the API returns
+ * domain records directly, and inventing wrapper types for those would add a
+ * layer that has to be kept in step for no benefit.
  */
 
-import type { Money, ReleaseState, ReviewState, Timestamp } from '@capturelock/core';
+import type {
+  Gate,
+  Money,
+  ReasonCode,
+  ReleaseState,
+  ReviewState,
+  Severity,
+  StageId,
+  Timestamp,
+  Verdict,
+} from '@capturelock/core';
 import type { EvidenceEnvelope } from '@capturelock/evidence';
 
 /**
@@ -73,4 +83,42 @@ export interface EvidenceTimelineResponse {
   readonly chainId: string;
   readonly head: { readonly sequence: number; readonly chainHash: string } | null;
   readonly envelopes: readonly EvidenceEnvelope[];
+}
+
+/**
+ * One finding from a recorded gate evaluation.
+ *
+ * The detail map is the kernel's own — the same scalars the stage put in the
+ * evidence envelope, carried through unchanged. It is what lets a console say
+ * *what* changed ("live 549900, charged 479900") rather than only that
+ * something did, without the console knowing anything about price checks.
+ *
+ * Restricted to canonicalizable scalars at the source, so there is nothing here
+ * a UI has to defend itself against structurally.
+ */
+export interface EvaluationFinding {
+  readonly code: ReasonCode;
+  readonly severity: Severity;
+  readonly stage: StageId;
+  readonly message: string;
+  readonly detail: Readonly<Record<string, string | number | boolean | null>>;
+}
+
+/**
+ * One row of `GET /v1/releases/:id`'s `evaluations`.
+ *
+ * Findings are included, and that is the point of this type existing: the
+ * decision hash proves a decision was reached, and the findings are the only
+ * record of *why*. Projecting codes alone left the console able to say
+ * LIVE_PRICE_DIVERGED and unable to say what the two prices were, while the
+ * evaluation row in the database had held both all along.
+ */
+export interface ReleaseEvaluationSummary {
+  readonly evaluationId: string;
+  readonly gate: Gate;
+  readonly verdict: Verdict;
+  readonly reasonCodes: readonly ReasonCode[];
+  readonly findings: readonly EvaluationFinding[];
+  readonly decisionHash: string;
+  readonly evaluatedAt: Timestamp;
 }

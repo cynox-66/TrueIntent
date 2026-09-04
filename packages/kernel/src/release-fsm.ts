@@ -151,9 +151,24 @@ export const TRANSITIONS: readonly TransitionRule[] = Object.freeze([
   },
   {
     trigger: 'CAPTURE_REQUESTED',
-    from: ['PAYMENT_AUTHORIZED'],
+    // `CAPTURE_VERIFYING` is a source as well as the destination, and that
+    // re-entry is what makes an operator's approval at the capture gate
+    // actionable. `REVIEW_APPROVED` puts an approved release into
+    // `CAPTURE_VERIFYING`; without this edge the agent's retry could not
+    // compare-and-set its way back to the gate, was refused
+    // `CONCURRENT_RELEASE_IN_PROGRESS`, and the release sat there until the
+    // liveness sweep aborted it — the approval produced nothing.
+    //
+    // This is not the widening rule 26 forbids. That rule is about states where
+    // the provider may already have acted; `CAPTURE_VERIFYING` is transient, so
+    // the write-ahead commit that precedes any capture provably has not
+    // happened. At-most-once execution is unaffected: it rests on the
+    // `CAPTURE_ALLOWED` and `CAPTURE_CALL_STARTED` compare-and-sets below, both
+    // of which still admit exactly one caller.
+    from: ['PAYMENT_AUTHORIZED', 'CAPTURE_VERIFYING'],
     to: 'CAPTURE_VERIFYING',
-    description: 'The capture gate begins: the kernel runs again against fresh live state.',
+    description:
+      'The capture gate begins, or begins again for a release an operator returned to it. The kernel runs against fresh live state either way.',
     writeAhead: false,
   },
   {

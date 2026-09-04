@@ -9,9 +9,12 @@
  *    trying to get a new cart charged under an answer we already gave.
  *  - **State legality.** A release may only be captured from the states the
  *    machine permits, and never from a terminal one.
- *  - **Velocity.** Repeated attempts in a short window are a symptom of a retry
- *    storm or of probing; they pause rather than deny, because the transaction
- *    itself may be perfectly legitimate.
+ *  - **Attempt count.** Repeated attempts on one release are a symptom of a
+ *    retry storm or of probing; they pause rather than deny, because the
+ *    transaction itself may be perfectly legitimate. Note that this counts
+ *    attempts over the release's whole life, not over a sliding window —
+ *    `velocityWindowSeconds` reaches the finding as context but bounds nothing,
+ *    because no per-attempt timestamps are persisted to window against.
  *
  * This stage detects. The actual *enforcement* of at-most-once execution is a
  * database constraint and a compare-and-set in the release service — see
@@ -130,7 +133,7 @@ export const executionStage: VerificationStage = {
         finding(
           STAGE,
           'RETRY_VELOCITY_EXCEEDED',
-          'Too many release attempts in the velocity window; pausing for a human rather than continuing to retry.',
+          'Too many release attempts on this release; pausing for a human rather than continuing to retry.',
           {
             attempts: execution.attemptsInWindow,
             limit: execution.maxAttemptsInWindow,

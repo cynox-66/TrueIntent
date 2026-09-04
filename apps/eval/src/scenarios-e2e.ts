@@ -15,7 +15,14 @@
 
 import { evaluate, deserializeContext } from '@capturelock/kernel';
 import { computeDecisionHash } from '@capturelock/core';
-import { Stack, SKU_BLACK, SKU_WHITE, OTHER_MERCHANT, STANDARD_FEES } from './e2e-harness.js';
+import {
+  Stack,
+  SKU_BLACK,
+  SKU_WHITE,
+  OTHER_MERCHANT,
+  STANDARD_FEES,
+  REVIEW_POLICY,
+} from './e2e-harness.js';
 
 export interface ScenarioReport {
   readonly id: string;
@@ -352,14 +359,208 @@ export const E2E_SCENARIOS: readonly ScenarioDef[] = [
       return { moneyMoved: false, chainValid: valid };
     },
   },
+  {
+    id: '8-operator-approval',
+    title:
+      'Operator review: paused at both gates, approved by a human, and still re-verified before money moves',
+    async run(stack, ctx) {
+      const auth = await stack.setup();
+      const snapshot = await stack.quote(auth);
+      if (typeof snapshot !== 'string') ctx.fail(`quote failed: ${snapshot.failed}`);
+
+      // The same request object every time. An operator's approval has to make
+      // the agent's *identical* retry succeed; if the agent had to change
+      // anything, the approval would not be what unblocked it.
+      const orderRequest = {
+        authorizationId: auth as never,
+        snapshotId: snapshot as never,
+        idempotencyKey: stack.key('s8-order'),
+        principal: stack.principal(),
+      };
+
+      const paused = await stack.releases.requestOrderCreation(orderRequest);
+      ctx.expect(paused.verdict === 'PAUSE', `gate 1 should have paused, got ${paused.verdict}`);
+      ctx.expect(
+        paused.reasonCodes.includes('TOTAL_EXCEEDS_LIMIT'),
+        `expected TOTAL_EXCEEDS_LIMIT, got ${paused.reasonCodes.join(',')}`,
+      );
+      ctx.expect(stack.provider.calls.length === 0, 'the provider was called on a paused order');
+      ctx.steps.push(`gate 1 PAUSE (${inr(494_900)} over a ${inr(100_000)} review ceiling)`);
+
+      const releaseId = paused.releaseId!;
+      const orderReview = await stack.resolveOpenReview(releaseId, 'APPROVED', 'operator_asha');
+      ctx.expect(
+        orderReview.state === 'VERIFYING',
+        `a gate-1 approval must return to the ORDER gate, got ${orderReview.state}`,
+      );
+      ctx.steps.push('operator_asha approved; release returned to the ORDER gate');
+
+      const created = await stack.releases.requestOrderCreation(orderRequest);
+      ctx.expect(
+        created.verdict === 'ALLOW',
+        `gate 1 retry refused: ${created.reasonCodes.join(',')}`,
+      );
+      ctx.expect(
+        created.state === 'ORDER_CREATED',
+        `expected ORDER_CREATED, got ${String(created.state)}`,
+      );
+      ctx.expect(
+        created.reasonCodes.includes('REVIEW_APPROVAL_APPLIED'),
+        'the approval was not recorded as what cleared the pause',
+      );
+      ctx.expect(!created.moneyMoved, 'money moved at the order gate');
+      ctx.steps.push('agent retried the identical request: ALLOW, order created, no money moved');
+
+      await stack.simulatePayerAuthorization(releaseId);
+      ctx.steps.push('payer authorized (real signed webhook)');
+
+      // Gate 2 sees the same ceiling. The gate-1 approval must NOT carry over:
+      // a fingerprint names the gate, so an approval never travels to one the
+      // human was not shown.
+      const capturePaused = await stack.releases.requestCapture({
+        releaseId: releaseId as never,
+        idempotencyKey: stack.key('s8-capture-1'),
+        principal: stack.principal(),
+      });
+      ctx.expect(
+        capturePaused.verdict === 'PAUSE',
+        `gate 2 should have paused again, got ${capturePaused.verdict}`,
+      );
+      ctx.expect(!capturePaused.moneyMoved, 'money moved on a paused capture');
+      ctx.expect(
+        stack.provider.callCount('capturePayment') === 0,
+        'the provider was called on a paused capture',
+      );
+      ctx.steps.push('gate 2 PAUSE: the order-gate approval did not carry across the gate');
+
+      const captureReview = await stack.resolveOpenReview(releaseId, 'APPROVED', 'operator_ben');
+      ctx.expect(
+        captureReview.reviewId !== orderReview.reviewId,
+        'the second pause reused the first review instead of opening its own',
+      );
+      ctx.expect(
+        captureReview.state === 'CAPTURE_VERIFYING',
+        `a gate-2 approval must return to the CAPTURE gate, got ${captureReview.state}`,
+      );
+      ctx.steps.push('operator_ben approved the capture-gate pause; release returned to gate 2');
+
+      const captured = await stack.releases.requestCapture({
+        releaseId: releaseId as never,
+        idempotencyKey: stack.key('s8-capture-2'),
+        principal: stack.principal(),
+      });
+      ctx.expect(
+        captured.verdict === 'ALLOW',
+        `gate 2 retry refused: ${captured.reasonCodes.join(',')}`,
+      );
+      ctx.expect(captured.state === 'CAPTURED', `expected CAPTURED, got ${String(captured.state)}`);
+      ctx.expect(captured.moneyMoved, 'the approved capture did not move money');
+      const calls = stack.provider.callCount('capturePayment');
+      ctx.expect(
+        calls === 1,
+        `expected exactly one capture call across the whole flow, got ${calls}`,
+      );
+      ctx.steps.push(`gate 2 ALLOW after approval; capture called ${calls} time`);
+
+      // The approval authorized re-verification, not payment: two humans are
+      // attributed in the ledger, and both approvals are still there.
+      const envelopes = await stack.deps.evidence.listByChain(auth);
+      const resolutions = envelopes.filter(e => e.kind === 'REVIEW_RESOLUTION');
+      ctx.expect(
+        resolutions.length === 2,
+        `expected both approvals in evidence, found ${resolutions.length}`,
+      );
+      ctx.steps.push('both approvals recorded in evidence, each attributed to its operator');
+
+      return { moneyMoved: true, chainValid: await stack.chainValid(auth) };
+    },
+  },
+
+  {
+    id: '9-operator-approval-does-not-override-reality',
+    title:
+      'An approval authorizes re-verification, not payment: drift after approval still refuses',
+    async run(stack, ctx) {
+      const auth = await stack.setup();
+      const snapshot = await stack.quote(auth);
+      if (typeof snapshot !== 'string') ctx.fail(`quote failed: ${snapshot.failed}`);
+
+      const orderRequest = {
+        authorizationId: auth as never,
+        snapshotId: snapshot as never,
+        idempotencyKey: stack.key('s9-order'),
+        principal: stack.principal(),
+      };
+
+      const paused = await stack.releases.requestOrderCreation(orderRequest);
+      ctx.expect(paused.verdict === 'PAUSE', `gate 1 should have paused, got ${paused.verdict}`);
+      await stack.resolveOpenReview(paused.releaseId!, 'APPROVED', 'operator_asha');
+      const created = await stack.releases.requestOrderCreation(orderRequest);
+      ctx.expect(
+        created.verdict === 'ALLOW',
+        `gate 1 retry refused: ${created.reasonCodes.join(',')}`,
+      );
+      await stack.simulatePayerAuthorization(created.releaseId!);
+      ctx.steps.push('approved at gate 1, order created, payer authorized');
+
+      const capturePaused = await stack.releases.requestCapture({
+        releaseId: created.releaseId as never,
+        idempotencyKey: stack.key('s9-capture-1'),
+        principal: stack.principal(),
+      });
+      ctx.expect(
+        capturePaused.verdict === 'PAUSE',
+        `gate 2 should have paused, got ${capturePaused.verdict}`,
+      );
+      await stack.resolveOpenReview(created.releaseId!, 'APPROVED', 'operator_ben');
+      ctx.steps.push('operator approved the capture-gate pause');
+
+      // The world moves between the approval and the retry — the exact window
+      // an approval is most likely to be stale in, because a human took time.
+      stack.drift({ kind: 'SET_PRICE', sku: SKU_BLACK, unitPriceMinor: 549_900 });
+      ctx.steps.push(`merchant raised the price to ${inr(549_900)} while the operator deliberated`);
+
+      const before = stack.provider.callCount('capturePayment');
+      const refused = await stack.releases.requestCapture({
+        releaseId: created.releaseId as never,
+        idempotencyKey: stack.key('s9-capture-2'),
+        principal: stack.principal(),
+      });
+
+      ctx.expect(refused.verdict === 'DENY', `expected DENY, got ${refused.verdict}`);
+      ctx.expect(
+        refused.reasonCodes.includes('LIVE_PRICE_DIVERGED'),
+        `expected LIVE_PRICE_DIVERGED, got ${refused.reasonCodes.join(',')}`,
+      );
+      ctx.expect(!refused.moneyMoved, 'money moved despite the refusal');
+      ctx.expect(
+        stack.provider.callCount('capturePayment') === before,
+        'the provider was called despite the capture gate refusing',
+      );
+      ctx.steps.push(
+        'gate 2 DENY: a human approval does not override live state; capture never called',
+      );
+
+      return { moneyMoved: false, chainValid: await stack.chainValid(auth) };
+    },
+  },
 ];
+
+/** Scenarios that need the PAUSE path, and therefore the review policy. */
+const NEEDS_REVIEW_POLICY = new Set([
+  '8-operator-approval',
+  '9-operator-approval-does-not-override-reality',
+]);
 
 export async function runE2EScenario(
   def: ScenarioDef,
   databaseUrl: string | undefined,
 ): Promise<ScenarioReport> {
-  const items = def.id === '3-merchant-switch' ? undefined : undefined;
-  const stack = await Stack.create({ databaseUrl, items, fees: [...STANDARD_FEES] });
+  const stack = await Stack.create({
+    databaseUrl,
+    fees: [...STANDARD_FEES],
+    policy: NEEDS_REVIEW_POLICY.has(def.id) ? REVIEW_POLICY : undefined,
+  });
   const steps: string[] = [];
   let failure: string | null = null;
 

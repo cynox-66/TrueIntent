@@ -10,13 +10,13 @@
  * weight, and the colour. Colour is the least important of the four.
  */
 
-import type { ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import type { OperatorQueueItem, OperatorQueueResponse } from '../api/types.js';
 import { api, type OperatorCredential } from '../api/client.js';
 import { useAsync } from '../lib/useAsync.js';
 import { formatAbsolute, formatMoney, formatRelative } from '../lib/format.js';
 import { primaryReason } from '../lib/reason-codes.js';
-import { hrefFor } from '../lib/router.js';
+import { hrefFor, navigate } from '../lib/router.js';
 import {
   EmptyState,
   ErrorBlock,
@@ -65,6 +65,8 @@ export function Queue({ operator }: { operator: OperatorCredential }): ReactNode
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
+
+      <Lookup />
 
       {state.status === 'loading' && <Skeleton rows={3} />}
       {state.status === 'failed' && <ErrorBlock error={state.error} onRetry={reload} />}
@@ -173,5 +175,51 @@ function QueueRow({ item }: { item: OperatorQueueItem }): ReactNode {
         </a>
       </div>
     </li>
+  );
+}
+
+/**
+ * Open a release or an authorization by id.
+ *
+ * The queue lists only what is *waiting*, which is correct — but it means the
+ * releases that best demonstrate the system are the ones it never shows. A
+ * transaction the capture gate refused is terminal, needs no operator, and
+ * therefore never appears here; without this box the only way to look at one
+ * was to hand-edit the URL.
+ *
+ * Purely navigational: it sets the route and nothing else. The id is already
+ * visible on screen and in the API's own URLs, so putting it in the hash
+ * reveals nothing new — and the operator credential is never part of a route.
+ */
+function Lookup(): ReactNode {
+  const [value, setValue] = useState('');
+
+  const submit = (event: FormEvent): void => {
+    event.preventDefault();
+    const id = value.trim();
+    if (id.length === 0) return;
+    if (id.startsWith('auth_')) navigate({ name: 'evidence', chainId: id });
+    else navigate({ name: 'release', releaseId: id });
+    setValue('');
+  };
+
+  return (
+    <form className="lookup" onSubmit={submit}>
+      <label className="lookup-label" htmlFor="lookup-id">
+        Open by id
+      </label>
+      <input
+        id="lookup-id"
+        className="lookup-input mono"
+        value={value}
+        onChange={event => setValue(event.target.value)}
+        placeholder="rel_… for a release, auth_… for its evidence chain"
+        spellCheck={false}
+        autoComplete="off"
+      />
+      <button type="submit" className="btn" disabled={value.trim().length === 0}>
+        Open
+      </button>
+    </form>
   );
 }

@@ -222,11 +222,21 @@ export class PostgresEvaluationRepository implements EvaluationRepository {
     return rows.length === 0 ? null : toEvaluation(rows[0]!);
   }
 
+  /**
+   * Oldest first, with `evaluation_id` breaking ties.
+   *
+   * Two evaluations can share an instant — both gates take their timestamp once
+   * at the start of the evaluation — and the console reads the *last* one
+   * recorded at each gate to decide which verdicts it is contrasting. An
+   * arbitrary order there would make the release page show a different story
+   * on different reads.
+   */
   async listByRelease(id: ReleaseId): Promise<readonly EvaluationRecord[]> {
     const rows = await this.db.query<EvaluationRow>(
       `SELECT evaluation_id, authorization_id, release_id, gate, decision,
               context_hash, decision_hash, evaluated_at
-       FROM evaluations WHERE release_id = $1 ORDER BY evaluated_at ASC`,
+       FROM evaluations WHERE release_id = $1
+       ORDER BY evaluated_at ASC, evaluation_id ASC`,
       [id],
     );
     return rows.map(toEvaluation);
@@ -300,14 +310,24 @@ export class PostgresReviewRepository implements ReviewRepository {
     return rows.length === 0 ? null : toReview(rows[0]!);
   }
 
-  /** The latest approval for a release, which the kernel consumes. */
-  async findLatestApprovedByRelease(id: ReleaseId): Promise<ReviewRecord | null> {
+  /**
+   * The approval for a release bound to this exact request, which the kernel
+   * consumes.
+   *
+   * `snapshot_hash` is the column the binding persists to; it holds a request
+   * fingerprint. Ordering is still newest-first so that a release re-approved
+   * for the same request yields the current decision.
+   */
+  async findApprovedByReleaseAndBinding(
+    id: ReleaseId,
+    boundTo: Sha256Hex,
+  ): Promise<ReviewRecord | null> {
     const rows = await this.db.query<ReviewRow>(
       `${REVIEW_SELECT}
-       WHERE release_id = $1 AND state = 'APPROVED'
+       WHERE release_id = $1 AND state = 'APPROVED' AND snapshot_hash = $2
        ORDER BY resolved_at DESC NULLS LAST, review_id DESC
        LIMIT 1`,
-      [id],
+      [id, boundTo],
     );
     return rows.length === 0 ? null : toReview(rows[0]!);
   }

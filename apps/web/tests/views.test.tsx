@@ -19,6 +19,7 @@ import type {
   ReleaseState,
   Timestamp,
 } from '../src/api/types.js';
+import { App } from '../src/App.js';
 import { Queue } from '../src/views/Queue.js';
 import { ReleaseDetail } from '../src/views/ReleaseDetail.js';
 import { Evidence } from '../src/views/Evidence.js';
@@ -108,8 +109,69 @@ function releaseBody(state: ReleaseState): ReleaseDetailResponse {
         gate: 'ORDER_CREATION',
         verdict: 'PAUSE',
         reasonCodes: ['TOTAL_EXCEEDS_LIMIT'],
+        findings: [
+          {
+            code: 'TOTAL_EXCEEDS_LIMIT',
+            severity: 'PAUSE',
+            stage: 'POLICY',
+            message: 'Cart total exceeds the policy ceiling.',
+            detail: { totalMinor: 494_900, limitMinor: 100_000 },
+          },
+        ],
         decisionHash: 'a'.repeat(64),
         evaluatedAt: AT,
+      },
+    ],
+  };
+}
+
+/**
+ * A release that the order gate allowed and the capture gate refused.
+ *
+ * The shape the console exists to make legible, and the one the queue never
+ * lists: a refused capture is terminal, so it waits on no operator.
+ */
+function refusedAtCaptureBody(): ReleaseDetailResponse {
+  const base = releaseBody('DENIED');
+  return {
+    release: {
+      ...base.release,
+      releaseId: 'rel_denied',
+      providerOrderId: 'order_fake_1',
+      providerPaymentId: 'pay_fake_1',
+      lastReasonCodes: ['LIVE_PRICE_DIVERGED'],
+    },
+    evaluations: [
+      {
+        evaluationId: 'eval_order',
+        gate: 'ORDER_CREATION',
+        verdict: 'ALLOW',
+        reasonCodes: ['VERIFIED_MATCH'],
+        findings: [],
+        decisionHash: 'a'.repeat(64),
+        evaluatedAt: AT,
+      },
+      {
+        evaluationId: 'eval_capture',
+        gate: 'CAPTURE',
+        verdict: 'DENY',
+        reasonCodes: ['LIVE_PRICE_DIVERGED'],
+        findings: [
+          {
+            code: 'LIVE_PRICE_DIVERGED',
+            severity: 'DENY',
+            stage: 'FRESHNESS',
+            message: 'The live unit price is not the price this transaction would charge.',
+            detail: {
+              sku: 'SKU-BLK-RUN-42',
+              liveUnitPriceMinor: 549_900,
+              chargedUnitPriceMinor: 479_900,
+              direction: 'INCREASED',
+            },
+          },
+        ],
+        decisionHash: 'd'.repeat(64),
+        evaluatedAt: ts('2026-09-04T05:05:00.000Z'),
       },
     ],
   };
@@ -517,3 +579,164 @@ describe('reason codes', () => {
 
 /** Keeps the JSX pragma honest for the type-only import above. */
 export type _Unused = ReactNode;
+
+// --------------------------------------------------- the two-gate narrative --
+
+describe('the gate story', () => {
+  /**
+   * The screen the product is named after.
+   *
+   * Before this existed, a release the capture gate refused rendered as a grey
+   * "Denied" heading, one reason code in a table, and an "Operator actions:
+   * nothing to do" panel — the most prominent statement on the page being that
+   * there was nothing to see. What actually happened (money was refused,
+   * because the price moved between two verifications) had to be reconstructed
+   * from a table two screens down.
+   */
+  it('states that money was refused, and why, above the fold', async () => {
+    route({
+      '/v1/releases/rel_denied': { body: refusedAtCaptureBody() },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+      '/v1/operator/queue': { body: queueBody([]) },
+    });
+    render(<ReleaseDetail releaseId="rel_denied" operator={OPERATOR} />);
+
+    expect(await screen.findByText(/CAPTURELOCK REFUSED TO MOVE MONEY/i)).toBeTruthy();
+    // The temporal property, in words, with the amount that was at stake.
+    expect(screen.getByText(/passed the order gate/i)).toBeTruthy();
+    expect(screen.getByText(/never asked to capture/i)).toBeTruthy();
+  });
+
+  it('shows both verdicts side by side', async () => {
+    route({
+      '/v1/releases/rel_denied': { body: refusedAtCaptureBody() },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+      '/v1/operator/queue': { body: queueBody([]) },
+    });
+    render(<ReleaseDetail releaseId="rel_denied" operator={OPERATOR} />);
+
+    await screen.findByText(/Two gates, one transaction/i);
+    expect(screen.getByText('GATE 1')).toBeTruthy();
+    expect(screen.getByText('GATE 2')).toBeTruthy();
+    // Both decision hashes are shown; the verdicts differ.
+    expect(screen.getAllByText('ALLOW').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('DENY').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The values, not just the code.
+   *
+   * The kernel recorded both prices in the finding detail all along; the API
+   * used to drop them on the way out, so the console could say
+   * LIVE_PRICE_DIVERGED and could not say what diverged from what.
+   */
+  it('shows what changed, using the kernel\'s own recorded numbers', async () => {
+    route({
+      '/v1/releases/rel_denied': { body: refusedAtCaptureBody() },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+      '/v1/operator/queue': { body: queueBody([]) },
+    });
+    render(<ReleaseDetail releaseId="rel_denied" operator={OPERATOR} />);
+
+    await screen.findByText(/What changed between the gates/i);
+    // Rendered in the release's own currency, from the minor units recorded.
+    expect(screen.getByTitle('549900')).toBeTruthy();
+    expect(screen.getByTitle('479900')).toBeTruthy();
+    expect(screen.getByText('SKU-BLK-RUN-42')).toBeTruthy();
+  });
+
+  it('draws no contrast when only one gate has run', async () => {
+    route({
+      '/v1/releases/rel_paused': { body: releaseBody('PAUSED') },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+      '/v1/operator/queue': { body: queueBody([]) },
+    });
+    render(<ReleaseDetail releaseId="rel_paused" operator={OPERATOR} />);
+
+    await screen.findByText(/Two gates, one transaction/i);
+    // Honest about the gate that has not happened rather than implying a pass.
+    expect(screen.getByText(/capture gate has not run for this release yet/i)).toBeTruthy();
+    expect(screen.queryByText(/CAPTURELOCK REFUSED TO MOVE MONEY/i)).toBeNull();
+  });
+
+  it('says the refusal is the outcome, not an omission', async () => {
+    route({
+      '/v1/releases/rel_denied': { body: refusedAtCaptureBody() },
+      '/v1/authorizations/auth_1': { body: AUTHORIZATION },
+      '/v1/operator/queue': { body: queueBody([]) },
+    });
+    render(<ReleaseDetail releaseId="rel_denied" operator={OPERATOR} />);
+
+    expect(await screen.findByText(/nothing to undo/i)).toBeTruthy();
+  });
+});
+
+describe('finding a release the queue does not list', () => {
+  /**
+   * A refused capture is terminal and waits on nobody, so it never appears in
+   * the queue. Without a lookup the only route to the screen above was editing
+   * the URL by hand.
+   */
+  it('navigates to a release by id', async () => {
+    route({ '/v1/operator/queue': { body: queueBody([]) } });
+    render(<Queue operator={OPERATOR} />);
+    await screen.findByText(/Nothing is waiting/i);
+
+    await userEvent.type(screen.getByLabelText(/Open by id/i), 'rel_denied');
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(window.location.hash).toBe('#/release/rel_denied');
+  });
+
+  it('sends an authorization id to its evidence chain', async () => {
+    route({ '/v1/operator/queue': { body: queueBody([]) } });
+    render(<Queue operator={OPERATOR} />);
+    await screen.findByText(/Nothing is waiting/i);
+
+    await userEvent.type(screen.getByLabelText(/Open by id/i), 'auth_1');
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(window.location.hash).toBe('#/evidence/auth_1');
+  });
+});
+
+describe('which provider is wired', () => {
+  /**
+   * The one thing a viewer must never have to infer.
+   *
+   * Every other surface here looks identical whether the adapter is the
+   * deterministic fake or Razorpay test mode — same states, same evidence, same
+   * refusals. Letting someone watching a demonstration assume the stronger
+   * reading would be the most consequential thing this console could get wrong.
+   */
+  it('names the fake adapter as simulated', async () => {
+    route({
+      '/health': { body: { status: 'ok', service: 'capturelock-api', paymentProvider: 'fake', timestamp: AT } },
+      '/v1/operator/queue': { status: 403, body: { error: 'FORBIDDEN' } },
+    });
+    render(<App />);
+    expect(await screen.findByText(/SIMULATED PROVIDER/i)).toBeTruthy();
+  });
+
+  it('names razorpay test mode when that is what is wired', async () => {
+    route({
+      '/health': {
+        body: {
+          status: 'ok',
+          service: 'capturelock-api',
+          paymentProvider: 'razorpay-test',
+          timestamp: AT,
+        },
+      },
+      '/v1/operator/queue': { status: 403, body: { error: 'FORBIDDEN' } },
+    });
+    render(<App />);
+    expect(await screen.findByText(/RAZORPAY TEST MODE/i)).toBeTruthy();
+  });
+
+  it('says it does not know rather than assuming, when /health cannot be read', async () => {
+    route({ '/v1/operator/queue': { status: 403, body: { error: 'FORBIDDEN' } } });
+    render(<App />);
+    expect(await screen.findByText(/provider unknown/i)).toBeTruthy();
+  });
+});

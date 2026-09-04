@@ -12,7 +12,8 @@ import { combine } from '../src/combine.js';
 import { GuardedPaymentExecutor, GrantRejectedError } from '../src/payment-executor.js';
 import { mintGrant } from '../src/grant.js';
 import { nextState } from '../src/release-fsm.js';
-import { Harness } from './harness.js';
+import { Harness, SKU } from './harness.js';
+import type { PolicyDocument } from '@capturelock/policy';
 
 // ---------------------------------------------------------------- webhooks --
 
@@ -360,5 +361,280 @@ describe('an operator approval is bound, not a blanket waiver', () => {
     const decision = run([]);
     expect(decision.verdict).toBe('ALLOW');
     expect(decision.reasonCodes).not.toContain('REVIEW_APPROVAL_APPLIED');
+  });
+});
+
+// ------------------------------------------- operator approval at gate two --
+
+/**
+ * A policy whose only rule pauses above a low ceiling.
+ *
+ * PAUSE severity is the one thing a policy author may choose, and it is chosen
+ * server-side and bound at issuance — an agent cannot select it. It makes the
+ * review path reachable without weakening any fixed-severity check.
+ */
+function pausingPolicy(): PolicyDocument {
+  return {
+    policyId: 'household_review',
+    version: '1.0.0',
+    name: 'Pauses above a low ceiling',
+    createdAt: asTimestamp('2026-09-01T00:00:00.000Z'),
+    rules: [
+      {
+        ruleId: 'review_above_ceiling',
+        kind: 'MAX_TOTAL',
+        description: 'Spend above this ceiling needs a human',
+        severity: 'PAUSE',
+        max: money('INR', 100),
+      },
+    ],
+  };
+}
+
+/** Approves whatever review is currently open on a release. */
+async function approveOpenReview(h: Harness, releaseId: string, by: string): Promise<string> {
+  const review = await h.reviews.findOpenByRelease(releaseId as never);
+  expect(review, 'expected an open review to approve').not.toBeNull();
+  const resolved = await h.reviewService.resolve(review!.reviewId, 'APPROVED', by);
+  expect(resolved.kind).toBe('RESOLVED');
+  return review!.reviewId;
+}
+
+describe('an operator approval at the CAPTURE gate is actionable', () => {
+  /**
+   * The defect this pins was the exact mirror of the gate-1 one fixed earlier,
+   * and it was reachable end to end.
+   *
+   * `REVIEW_APPROVED` leaves an approved release in `CAPTURE_VERIFYING`, but
+   * `CAPTURE_REQUESTED` was only legal from `PAYMENT_AUTHORIZED`. The agent's
+   * retry therefore lost the compare-and-set, was told
+   * `CONCURRENT_RELEASE_IN_PROGRESS`, and the release sat in `CAPTURE_VERIFYING`
+   * until the liveness sweep aborted it. Money could never move for any release
+   * that had once paused at the capture gate — the operator's approval produced
+   * nothing at all.
+   */
+  async function pauseAtCaptureGate(): Promise<{
+    h: Harness;
+    releaseId: string;
+    orderReviewId: string;
+  }> {
+    const h = new Harness({ policy: pausingPolicy() });
+    const authorizationId = await h.setup();
+    const snapshotId = await h.quote(authorizationId);
+
+    const request = {
+      authorizationId: authorizationId as never,
+      snapshotId: snapshotId as never,
+      idempotencyKey: h.key('gate2approve'),
+      principal: h.principal(),
+    };
+
+    const paused = await h.releaseService.requestOrderCreation(request);
+    expect(paused.verdict).toBe('PAUSE');
+
+    const orderReviewId = await approveOpenReview(h, paused.releaseId!, 'operator_one');
+
+    // The agent retries the identical request; gate 1 re-verifies and allows.
+    const allowed = await h.releaseService.requestOrderCreation(request);
+    expect(allowed.verdict).toBe('ALLOW');
+    expect(allowed.state).toBe('ORDER_CREATED');
+
+    await h.authorizePayment(allowed.releaseId!);
+
+    // Gate 2 sees the same PAUSE rule. The gate-1 approval must NOT carry over:
+    // its fingerprint names the order gate, so it covers nothing here.
+    const captureAttempt = await h.releaseService.requestCapture({
+      releaseId: allowed.releaseId as never,
+      idempotencyKey: h.key('gate2cap1'),
+      principal: h.principal(),
+    });
+    expect(captureAttempt.verdict).toBe('PAUSE');
+    expect(captureAttempt.state).toBe('PAUSED');
+    expect(captureAttempt.moneyMoved).toBe(false);
+
+    return { h, releaseId: allowed.releaseId!, orderReviewId };
+  }
+
+  it('captures after the operator approves the capture-gate pause', async () => {
+    const { h, releaseId } = await pauseAtCaptureGate();
+
+    await approveOpenReview(h, releaseId, 'operator_two');
+    expect((await h.releases.findById(releaseId as never))?.state).toBe('CAPTURE_VERIFYING');
+
+    const captured = await h.releaseService.requestCapture({
+      releaseId: releaseId as never,
+      idempotencyKey: h.key('gate2cap2'),
+      principal: h.principal(),
+    });
+
+    expect(captured.verdict).toBe('ALLOW');
+    expect(captured.state).toBe('CAPTURED');
+    expect(captured.moneyMoved).toBe(true);
+    // Once, and only once, across the whole flow.
+    expect(h.provider.callCount('capturePayment')).toBe(1);
+    expect(h.provider.capturedCount()).toBe(1);
+  });
+
+  it('gives the second pause its own review rather than colliding with the first', async () => {
+    const { h, releaseId, orderReviewId } = await pauseAtCaptureGate();
+
+    const captureReview = await h.reviews.findOpenByRelease(releaseId as never);
+    expect(captureReview).not.toBeNull();
+    // Both reviews exist, and the resolved gate-1 one was not overwritten.
+    expect(captureReview!.reviewId).not.toBe(orderReviewId);
+    const first = await h.reviews.findById(orderReviewId as never);
+    expect(first?.state).toBe('APPROVED');
+    expect(first?.resolvedBy).toBe('operator_one');
+  });
+
+  it('still refuses when reality moved while the operator deliberated', async () => {
+    const { h, releaseId } = await pauseAtCaptureGate();
+    await approveOpenReview(h, releaseId, 'operator_two');
+
+    // The approval authorizes re-verification, not payment. The merchant's
+    // price moves before the agent retries.
+    h.catalog.apply({ kind: 'SET_PRICE', sku: SKU, unitPriceMinor: 549_900 });
+
+    const refused = await h.releaseService.requestCapture({
+      releaseId: releaseId as never,
+      idempotencyKey: h.key('gate2cap3'),
+      principal: h.principal(),
+    });
+
+    expect(refused.verdict).toBe('DENY');
+    expect(refused.reasonCodes).toContain('LIVE_PRICE_DIVERGED');
+    expect(refused.moneyMoved).toBe(false);
+    expect(h.provider.callCount('capturePayment')).toBe(0);
+  });
+
+  it('does not let the capture gate re-enter from anywhere else', () => {
+    // The re-entry is confined to the two states the gate legitimately runs
+    // from. Nothing that has reached the provider can go back to the gate.
+    expect(nextState('CAPTURE_VERIFYING', 'CAPTURE_REQUESTED')).toBe('CAPTURE_VERIFYING');
+    expect(nextState('PAYMENT_AUTHORIZED', 'CAPTURE_REQUESTED')).toBe('CAPTURE_VERIFYING');
+    for (const from of [
+      'CAPTURE_APPROVED',
+      'CAPTURE_IN_FLIGHT',
+      'CAPTURE_INDETERMINATE',
+      'CAPTURED',
+      'ORDER_CREATED',
+      'PAUSED',
+    ] as const) {
+      expect(nextState(from, 'CAPTURE_REQUESTED')).toBeNull();
+    }
+  });
+});
+
+// ------------------------------------------ what a refused duplicate says --
+
+describe('a duplicate capture is refused definitively, not left open', () => {
+  /**
+   * The refusal override may lower a verdict, never raise one — and it must not
+   * soften one either.
+   *
+   * Applying it unconditionally rewrote the kernel's DENY into a PAUSE, so a
+   * second capture of an already-captured release answered `202 Accepted` with
+   * `PAUSE`. To a client that reads status codes, "accepted, pending" is an
+   * invitation to poll or retry the one operation the state machine had just
+   * established must never happen twice.
+   */
+  it('reports DENY, not PAUSE, for a capture the state machine refuses outright', async () => {
+    const h = new Harness();
+    const { releaseId } = await h.openOrder();
+    await h.authorizePayment(releaseId);
+
+    const first = await h.releaseService.requestCapture({
+      releaseId: releaseId as never,
+      idempotencyKey: h.key('dup1'),
+      principal: h.principal(),
+    });
+    expect(first.verdict).toBe('ALLOW');
+    expect(first.state).toBe('CAPTURED');
+
+    const second = await h.releaseService.requestCapture({
+      releaseId: releaseId as never,
+      idempotencyKey: h.key('dup2'),
+      principal: h.principal(),
+    });
+
+    expect(second.verdict).toBe('DENY');
+    expect(second.reasonCodes).toContain('INVALID_RELEASE_STATE_FOR_GATE');
+    expect(second.reasonCodes).toContain('AUTHORIZATION_ALREADY_CONSUMED');
+    // The release is untouched, and the provider was asked exactly once.
+    expect(second.state).toBe('CAPTURED');
+    expect(h.provider.callCount('capturePayment')).toBe(1);
+    expect(h.provider.capturedCount()).toBe(1);
+    // `moneyMoved` describes the release, which really was captured — by the
+    // first request. The verdict is what tells this caller it was not them.
+    expect(second.moneyMoved).toBe(true);
+  });
+});
+
+// ------------------------------------------ one release per provider payment --
+
+describe('a provider payment belongs to exactly one release', () => {
+  /**
+   * The database backstop behind the webhook service's entity check.
+   *
+   * `releases.provider_payment_id` is UNIQUE, and that constraint is what makes
+   * "one release per payment" true rather than merely intended: the capture
+   * gate presents `release.providerPaymentId` to the provider together with
+   * *this* release's amount, so a payment bound to two releases is a payment
+   * that could be captured for the wrong figure.
+   *
+   * This assertion was not writable offline until recently. The in-memory store
+   * did not model the constraint, so a test like this passed for a reason that
+   * did not hold in production — the exact inversion the parity suite now
+   * prevents. `parity.db.test.ts` proves the two stores agree here.
+   */
+  it('lets a release re-assert its own payment id, which redelivery does', async () => {
+    // The constraint must not punish the normal case: a webhook is delivered
+    // at least once, so the same payment id arrives again for the release that
+    // already holds it. Postgres does not consider a row in conflict with
+    // itself, and neither may the fake.
+    const h = new Harness();
+    const { releaseId } = await h.openOrder('redelivery');
+    const paymentId = await h.authorizePayment(releaseId);
+
+    const again = await h.releases.transition(
+      releaseId as never,
+      ['PAYMENT_AUTHORIZED'],
+      'PAYMENT_AUTHORIZED',
+      { providerPaymentId: paymentId },
+      h.clock.now(),
+    );
+    expect(again?.providerPaymentId).toBe(paymentId);
+  });
+
+  it('refuses a second release in the same store claiming one payment', async () => {
+    const h = new Harness();
+    const first = await h.openOrder('claim-one');
+    const paymentId = await h.authorizePayment(first.releaseId);
+
+    // Drive the first release terminal so the authorization frees its slot,
+    // then build a second release in the SAME store.
+    await h.releases.transition(
+      first.releaseId as never,
+      ['PAYMENT_AUTHORIZED'],
+      'ABORTED',
+      {},
+      h.clock.now(),
+    );
+    const second = await h.openOrder('claim-two');
+
+    await expect(
+      h.releases.transition(
+        second.releaseId as never,
+        ['ORDER_CREATED'],
+        'PAYMENT_AUTHORIZED',
+        { providerPaymentId: paymentId },
+        h.clock.now(),
+      ),
+    ).rejects.toThrow(/releases_provider_payment_id_key/);
+
+    // The refused transition left the release exactly as it was.
+    const after = await h.releases.findById(second.releaseId as never);
+    expect(after?.state).toBe('ORDER_CREATED');
+    expect(after?.providerPaymentId).toBeNull();
   });
 });

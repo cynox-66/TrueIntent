@@ -233,6 +233,11 @@ export class PostgresReleaseRepository implements ReleaseRepository {
    *
    * Filtered on `updated_at` rather than `in_flight_since`, because these rows
    * never had a provider call and so never set the latter. See ADR-011.
+   *
+   * `release_id` makes the ordering total. Without it two rows sharing a
+   * timestamp order arbitrarily, so a limit could return a different set on
+   * each call — and the in-memory store, which must match, would have no
+   * defined answer to match.
    */
   async findAbandonedInTransientState(
     olderThan: Timestamp,
@@ -242,13 +247,14 @@ export class PostgresReleaseRepository implements ReleaseRepository {
       `${SELECT}
        WHERE state = ANY($1::text[])
          AND updated_at <= $2
-       ORDER BY updated_at ASC
+       ORDER BY updated_at ASC, release_id ASC
        LIMIT $3`,
       [[...TRANSIENT], olderThan, limit],
     );
     return rows.map(toRecord);
   }
 
+  /** Oldest in-flight first; `release_id` makes the order total under a limit. */
   async findRequiringReconciliation(
     olderThan: Timestamp,
     limit: number,
@@ -258,7 +264,7 @@ export class PostgresReleaseRepository implements ReleaseRepository {
        WHERE state IN ('ORDER_IN_FLIGHT','ORDER_INDETERMINATE','CAPTURE_IN_FLIGHT','CAPTURE_INDETERMINATE')
          AND in_flight_since IS NOT NULL
          AND in_flight_since <= $1
-       ORDER BY in_flight_since ASC
+       ORDER BY in_flight_since ASC, release_id ASC
        LIMIT $2`,
       [olderThan, limit],
     );

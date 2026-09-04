@@ -116,16 +116,25 @@ than one that does not exist.
   the stale value faithfully.
 - **Normalization error is not detectable.** Constraints that do not match what
   the user meant will be enforced correctly and wrongly.
+- **`RETRY_VELOCITY_EXCEEDED` counts attempts, not a rate.** `attemptCount` is a
+  lifetime counter on the release; no per-attempt timestamps are persisted, so
+  `VELOCITY_WINDOW_SECONDS` reaches the finding as context and bounds nothing. A
+  release that legitimately takes several attempts over an hour is treated the
+  same as one that took them in a second.
 - **Concurrency is proven for one process against one database.** Network
   partitions, failover and multi-region are untested.
 - **The shipped advisory reviewer is a lexical heuristic**, not an intent
   classifier.
-- **Capture semantics are unverified against the live API.** The smoke test
-  never captures, so the non-idempotent-capture behaviour underpinning
-  `CAPTURE_INDETERMINATE` rests on documentation alone. Order semantics _were_
-  measured, and two documented behaviours turned out to be wrong
-  ([ADR-015](../decisions/ADR-015-razorpay-reality.md)) — which is reason to
-  treat the unmeasured half with the same suspicion.
+- **Capture semantics were measured against the live API** and are no longer the
+  open question they were. A full authorize → capture lifecycle was run in test
+  mode: `payment_capture: 0` genuinely holds a payment at `authorized`, the
+  capture gate ran before the provider call, and a re-capture returned
+  `"This payment has already been captured"` — the exact wording the adapter
+  maps to `ALREADY_CAPTURED`, pinned as a fixture. See
+  [ADR-016](../decisions/ADR-016-live-capture-verification.md). What remains
+  unmeasured is the _lost-response_ path itself: `CAPTURE_INDETERMINATE` is
+  reached by injecting a timeout into a fake, because a real one cannot be
+  induced on demand.
 - **Grant single-use is per-process.** Two API instances do not share a
   consumed-nonce set. Double capture is still prevented by the state machine and
   the database constraints, but not by that mechanism.

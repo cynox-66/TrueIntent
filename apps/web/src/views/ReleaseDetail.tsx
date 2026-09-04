@@ -26,6 +26,7 @@ import { api, type OperatorCredential } from '../api/client.js';
 import { useAsync } from '../lib/useAsync.js';
 import { formatAbsolute, formatMoney, formatRelative, humanizeState } from '../lib/format.js';
 import { hrefFor } from '../lib/router.js';
+import { GateStory, verdictTone } from './GateStory.js';
 import {
   ErrorBlock,
   Field,
@@ -39,6 +40,16 @@ import {
   type Tone,
 } from '../components/primitives.js';
 
+/**
+ * Terminal states a release reaches without any money having moved.
+ *
+ * Used only for wording. `moneyHasMoved` on the server remains the authority
+ * for the fact itself; this list exists so the console does not tell an
+ * operator there is "nothing to do" on a refusal without also saying that the
+ * refusal is the outcome, not an omission.
+ */
+const TERMINAL_WITHOUT_MONEY = new Set(['DENIED', 'ABORTED', 'FAILED', 'CAPTURE_REJECTED']);
+
 /** States in which each operator action is legal, taken from the state machine. */
 const RECONCILABLE = new Set([
   'ORDER_IN_FLIGHT',
@@ -46,12 +57,6 @@ const RECONCILABLE = new Set([
   'CAPTURE_IN_FLIGHT',
   'CAPTURE_INDETERMINATE',
 ]);
-
-function verdictTone(verdict: string): Tone {
-  if (verdict === 'ALLOW') return 'safe';
-  if (verdict === 'PAUSE') return 'attention';
-  return 'danger';
-}
 
 function stateTone(state: string): Tone {
   if (state === 'CAPTURED' || state === 'SETTLED') return 'safe';
@@ -121,6 +126,8 @@ function Loaded({
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
+
+      <GateStory evaluations={evaluations} amount={release.amount} state={release.state} />
 
       {paused && (
         <div style={{ marginBottom: '1rem' }}>
@@ -265,11 +272,15 @@ function OperatorActions({
   reconcilable: boolean;
 }): ReactNode {
   if (!paused && !reconcilable) {
+    const settled = TERMINAL_WITHOUT_MONEY.has(detail.release.state);
     return (
       <Panel title="Operator actions">
         <p className="muted">
-          Nothing to do. A release in <span className="mono">{detail.release.state}</span> is not
-          waiting on an operator — actions appear only when the current state allows them.
+          {settled
+            ? 'Nothing to do, and nothing to undo: this release ended without money moving. '
+            : 'Nothing to do. '}
+          A release in <span className="mono">{detail.release.state}</span> is not waiting on an
+          operator — actions appear only when the current state allows them.
         </p>
       </Panel>
     );
