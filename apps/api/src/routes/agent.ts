@@ -34,6 +34,7 @@ import {
   SkuSchema,
   UserIdSchema,
   asSessionId,
+  moneyHasMoved,
   remainingBudget,
   type SessionAuthorityRecord,
 } from '@capturelock/core';
@@ -268,6 +269,96 @@ export function registerAgentRoutes(server: FastifyInstance, app: Application): 
         createdAt: purchase.createdAt,
         settledAt: purchase.settledAt,
       })),
+    });
+  });
+
+  /**
+   * The buyer-facing story of a session, assembled server-side.
+   *
+   * Principal authority, not operator: this is the user's own session, and the
+   * screen that shows it is the one they are standing in front of. It carries
+   * no policy binding and no operator-only field.
+   *
+   * Every value is projected from stored state. A step that did not happen is
+   * absent rather than inferred, and `moneyMoved` is read from release state
+   * rather than derived from a verdict — a refusal and an unmoved payment are
+   * different claims, and only the second one is a promise worth making.
+   */
+  server.get('/v1/sessions/:id/timeline', async (request, reply) => {
+    const principal = principalOf(request);
+    if (principal === null) return unauthenticated(reply);
+    const { id } = SessionIdParam.parse(request.params);
+
+    const session = await app.commerceSessionService.findById(asSessionId(id));
+    if (session === null) {
+      return reply.status(404).send({ error: 'NOT_FOUND', message: 'No such session.' });
+    }
+    if (session.userId !== principal.userId) {
+      return reply
+        .status(403)
+        .send({ error: 'SESSION_NOT_OWNED', message: 'That session belongs to another user.' });
+    }
+
+    const purchases = await app.deps.sessions.listPurchasesBySession(session.sessionId, 50);
+
+    const timeline = await Promise.all(
+      purchases.map(async purchase => {
+        const authorizationId = purchase.authorizationId as never;
+        // Terminal releases included: a refused purchase is exactly the case
+        // this screen exists to show, and `findActiveByAuthorization` would
+        // return null for it.
+        const releases = await app.deps.releases.listByAuthorization(authorizationId, 1);
+        const release = releases[0] ?? null;
+        const evaluations =
+          release === null ? [] : await app.deps.evaluations.listByRelease(release.releaseId);
+        const chain = await app.deps.evidence.listByChain(purchase.authorizationId);
+        const verification = await app.deps.evidence.verifyChain(purchase.authorizationId);
+        const capsuleEnvelope = chain.find(entry => entry.kind === 'AGENT_CONTEXT');
+
+        return {
+          authorizationId: purchase.authorizationId,
+          releaseId: release?.releaseId ?? null,
+          state: release?.state ?? null,
+          amount: release === null ? null : release.amount,
+          settlementState: purchase.settlementState,
+          reservedMinor: purchase.reservedMinor,
+          capsuleHash: purchase.capsuleHash,
+          capsule: (capsuleEnvelope?.body as { capsule?: unknown } | undefined)?.capsule ?? null,
+          gates: evaluations.map(evaluation => ({
+            gate: evaluation.gate,
+            verdict: evaluation.decision.verdict,
+            reasonCodes: evaluation.decision.reasonCodes,
+            findings: evaluation.decision.findings.map(finding => ({
+              code: finding.code,
+              severity: finding.severity,
+              stage: finding.stage,
+              message: finding.message,
+              detail: finding.detail,
+            })),
+            decisionHash: evaluation.decisionHash,
+            evaluatedAt: evaluation.evaluatedAt,
+          })),
+          providerOrderId: release?.providerOrderId ?? null,
+          providerPaymentId: release?.providerPaymentId ?? null,
+          // From release state, never from a verdict.
+          moneyMoved: release === null ? false : moneyHasMoved(release.state),
+          evidence: {
+            chainId: purchase.authorizationId,
+            envelopeCount: chain.length,
+            kinds: chain.map(entry => entry.kind),
+            valid: verification.valid,
+            headChainHash: verification.headChainHash,
+          },
+          createdAt: purchase.createdAt,
+        };
+      }),
+    );
+
+    return reply.send({
+      session: sessionView(session),
+      purchases: timeline,
+      anyMoneyMoved: timeline.some(entry => entry.moneyMoved),
+      paymentProvider: app.providerName,
     });
   });
 

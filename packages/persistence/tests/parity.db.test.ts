@@ -489,6 +489,73 @@ describe('releases: the sweep and queue queries', () => {
 
 // ================================================================== reviews ==
 
+describe('releases: listing every release for an authorization', () => {
+  it('includes terminal releases, newest first, identically', async () => {
+    // Distinct from findActiveByAuthorization, which excludes terminal states.
+    // A read surface describing a *refused* purchase needs the terminal row —
+    // that is the case most worth showing — so the two queries must not be
+    // confused for one another.
+    const { memory } = await parity(async backend => {
+      await seed(backend, {
+        authorizations: [1],
+        snapshots: [
+          [1, 1],
+          [2, 1],
+        ],
+      });
+      await backend.repos.releases.insert(release(1));
+      await backend.repos.releases.transition(releaseId(1), ['DRAFT'], 'DENIED', {}, T1);
+      await backend.repos.releases.insert(
+        release(2, {
+          authorizationId: authorizationId(1),
+          snapshotId: snapshotId(2),
+          createdAt: T2,
+        }),
+      );
+
+      const active = await observe(() =>
+        backend.repos.releases.findActiveByAuthorization(authorizationId(1)),
+      );
+      const all = await observe(() =>
+        backend.repos.releases.listByAuthorization(authorizationId(1), 10),
+      );
+      return {
+        activeId: (active as { ok?: { releaseId?: string } }).ok?.releaseId ?? null,
+        allIds: ((all as { ok?: { releaseId: string }[] }).ok ?? []).map(r => r.releaseId),
+      };
+    });
+
+    expect(memory).toEqual({
+      activeId: releaseId(2),
+      allIds: [releaseId(2), releaseId(1)],
+    });
+  });
+
+  it('orders identically under a limit when timestamps tie', async () => {
+    // Same created_at on both rows, so the tiebreak is what decides the set.
+    const { memory } = await parity(async backend => {
+      await seed(backend, {
+        authorizations: [1],
+        snapshots: [
+          [1, 1],
+          [2, 1],
+        ],
+      });
+      await backend.repos.releases.insert(release(1));
+      await backend.repos.releases.transition(releaseId(1), ['DRAFT'], 'DENIED', {}, T1);
+      await backend.repos.releases.insert(
+        release(2, { authorizationId: authorizationId(1), snapshotId: snapshotId(2) }),
+      );
+
+      const page = await observe(() =>
+        backend.repos.releases.listByAuthorization(authorizationId(1), 1),
+      );
+      return { page: ((page as { ok?: { releaseId: string }[] }).ok ?? []).map(r => r.releaseId) };
+    });
+    expect(memory).toEqual({ page: [releaseId(2)] });
+  });
+});
+
 describe('reviews', () => {
   /**
    * The exact shape of the defect that shipped.

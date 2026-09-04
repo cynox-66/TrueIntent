@@ -316,6 +316,17 @@ export class InMemoryReleaseRepository implements ReleaseRepository {
    * pick up different work here than in production. Sorted first for the same
    * reason `listRequiringOperatorAttention` is.
    */
+  async listByAuthorization(id: AuthorizationId, limit: number): Promise<readonly ReleaseRecord[]> {
+    return [...this.rows.values()]
+      .filter(row => row.authorizationId === id)
+      .sort(
+        (a, b) =>
+          timestampToEpochMillis(b.createdAt) - timestampToEpochMillis(a.createdAt) ||
+          b.releaseId.localeCompare(a.releaseId, 'en'),
+      )
+      .slice(0, limit);
+  }
+
   async findRequiringReconciliation(
     olderThan: Timestamp,
     limit: number,

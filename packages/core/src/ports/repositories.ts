@@ -92,6 +92,15 @@ export interface ReleaseRepository {
   /** Non-terminal release for an authorization, if any. */
   findActiveByAuthorization(id: AuthorizationId): Promise<ReleaseRecord | null>;
   /**
+   * Every release for an authorization, newest first, terminal ones included.
+   *
+   * Distinct from `findActiveByAuthorization` on purpose. That query answers
+   * "is this mandate busy?" and deliberately excludes terminal states. A
+   * read surface that used it to *describe* a purchase would show nothing for
+   * the refused ones — which are the cases most worth showing.
+   */
+  listByAuthorization(id: AuthorizationId, limit: number): Promise<readonly ReleaseRecord[]>;
+  /**
    * Atomic compare-and-set. Returns null when the row was not in `from`,
    * which the caller must treat as "another actor got there first".
    */

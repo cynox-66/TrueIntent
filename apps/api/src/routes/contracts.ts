@@ -192,3 +192,69 @@ export interface AgentContextResponse {
   readonly evidenceEnvelopeId?: string | null;
   readonly session: AgentSessionView | null;
 }
+
+/**
+ * `GET /v1/sessions/:id/timeline`.
+ *
+ * One read that assembles what a buyer-facing screen needs: the delegation, and
+ * for each purchase attempted under it, the release, both gate decisions, the
+ * provider's state and the evidence chain.
+ *
+ * It exists because the alternative — four round trips per purchase, stitched
+ * together in a browser — would put the ordering of the story in the client,
+ * where it could drift from what actually happened. The server already knows
+ * the order; saying it once is both simpler and harder to get wrong.
+ *
+ * Every field is projected from stored state. Nothing here is derived for
+ * presentation, and nothing is simulated: a step that did not happen is absent
+ * rather than inferred.
+ */
+export interface AgentTimelineGate {
+  readonly gate: Gate;
+  readonly verdict: Verdict;
+  readonly reasonCodes: readonly ReasonCode[];
+  readonly findings: readonly EvaluationFinding[];
+  readonly decisionHash: string;
+  readonly evaluatedAt: Timestamp;
+}
+
+export interface AgentTimelinePurchase {
+  readonly authorizationId: string;
+  readonly releaseId: string | null;
+  readonly state: ReleaseState | null;
+  /** What the server priced, not what the agent proposed. */
+  readonly amount: { readonly currency: string; readonly amountMinor: number } | null;
+  readonly settlementState: 'RESERVED' | 'SETTLED' | 'RELEASED';
+  readonly reservedMinor: number;
+  readonly capsuleHash: string;
+  /** The agent's selection and rationale, from the context capsule. */
+  readonly capsule: AgentContextCapsuleView | null;
+  readonly gates: readonly AgentTimelineGate[];
+  readonly providerOrderId: string | null;
+  readonly providerPaymentId: string | null;
+  /**
+   * Whether the provider confirmed funds moved for this release.
+   *
+   * The single most important field on this response, and read from release
+   * state rather than inferred from a verdict — a refusal and an unmoved payment
+   * are different claims, and only the second one is a promise.
+   */
+  readonly moneyMoved: boolean;
+  readonly evidence: {
+    readonly chainId: string;
+    readonly envelopeCount: number;
+    readonly kinds: readonly string[];
+    readonly valid: boolean;
+    readonly headChainHash: string | null;
+  };
+  readonly createdAt: Timestamp;
+}
+
+export interface AgentTimelineResponse {
+  readonly session: AgentSessionView;
+  readonly purchases: readonly AgentTimelinePurchase[];
+  /** Whether any purchase in this session moved money. */
+  readonly anyMoneyMoved: boolean;
+  /** Which payment adapter is wired, so a screen never has to guess. */
+  readonly paymentProvider: string;
+}

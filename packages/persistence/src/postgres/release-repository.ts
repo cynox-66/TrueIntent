@@ -255,6 +255,18 @@ export class PostgresReleaseRepository implements ReleaseRepository {
   }
 
   /** Oldest in-flight first; `release_id` makes the order total under a limit. */
+  async listByAuthorization(id: AuthorizationId, limit: number): Promise<readonly ReleaseRecord[]> {
+    // `release_id` breaks ties so a limit returns a stable set: two releases
+    // for one authorization can share a `created_at`, and an undefined ordering
+    // would let the two stores disagree about which rows a limit selects.
+    const rows = await this.db.query<ReleaseRow>(
+      `${SELECT} WHERE authorization_id = $1
+        ORDER BY created_at DESC, release_id DESC LIMIT $2`,
+      [id, limit],
+    );
+    return rows.map(toRecord);
+  }
+
   async findRequiringReconciliation(
     olderThan: Timestamp,
     limit: number,
