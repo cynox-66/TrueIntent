@@ -42,6 +42,7 @@ import {
   InMemoryPolicyRepository,
   InMemoryReleaseRepository,
   InMemoryReviewRepository,
+  InMemorySessionAuthorityRepository,
   InMemorySnapshotRepository,
   InMemoryUnitOfWork,
   InMemoryWebhookInboxRepository,
@@ -321,6 +322,7 @@ async function runCaptureLock(
     webhookInbox: new InMemoryWebhookInboxRepository(),
     policies: new InMemoryPolicyRepository(),
     evidence,
+    sessions: new InMemorySessionAuthorityRepository(),
   };
 
   const deps: PaymentDependencies = {

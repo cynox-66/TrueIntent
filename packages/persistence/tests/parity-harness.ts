@@ -46,13 +46,17 @@ import type {
   ReleaseState,
   ReviewId,
   ReviewRecord,
+  SessionAuthorityRecord,
+  SessionBounds,
+  SessionId,
+  SessionPurchaseRecord,
   Sha256Hex,
   SnapshotId,
   Timestamp,
   VerifiedSnapshot,
   WebhookInboxRecord,
 } from '@capturelock/core';
-import { asTimestamp, money } from '@capturelock/core';
+import { asTimestamp, computeSessionBoundsHash, money } from '@capturelock/core';
 import type { PolicyDocument } from '@capturelock/policy';
 import type { Repositories } from '@capturelock/kernel';
 import { createSigner, createVerifier, generateEvidenceKeyPair } from '@capturelock/evidence';
@@ -63,6 +67,7 @@ import {
   InMemoryPolicyRepository,
   InMemoryReleaseRepository,
   InMemoryReviewRepository,
+  InMemorySessionAuthorityRepository,
   InMemorySnapshotRepository,
   InMemoryUnitOfWork,
   InMemoryWebhookInboxRepository,
@@ -351,6 +356,7 @@ export function memoryBackend(): Backend {
     webhookInbox: new InMemoryWebhookInboxRepository(),
     policies: new InMemoryPolicyRepository(),
     evidence: new InMemoryEvidenceLedger(signer, verifier),
+    sessions: new InMemorySessionAuthorityRepository(),
   };
   return { name: 'memory', repos: stores, unitOfWork: new InMemoryUnitOfWork(stores) };
 }
@@ -367,7 +373,8 @@ export function postgresBackend(db: Database): Backend {
 
 export async function truncate(db: Database): Promise<void> {
   await db.query(
-    `TRUNCATE idempotency_records, review_requests, webhook_inbox, evidence_envelopes,
+    `TRUNCATE commerce_session_purchases, commerce_sessions, idempotency_records,
+     review_requests, webhook_inbox, evidence_envelopes,
      evaluations, releases, verified_snapshots, authorizations, policies CASCADE`,
   );
 }
@@ -391,6 +398,84 @@ export async function seed(
   }
   for (const [snap, auth] of options.snapshots ?? [[1, 1]]) {
     await backend.repos.snapshots.insert(snapshot(snap, auth));
+  }
+}
+
+/**
+ * Deterministic session fixtures.
+ *
+ * Fixed ids and a fixed bounds object so both backends hash to the same
+ * `bounds_hash` and a comparison of the two is comparing behaviour rather than
+ * incidental input.
+ */
+export function sessionId(n: number): SessionId {
+  return `sess_${String(n).padStart(32, '0')}` as SessionId;
+}
+
+export function sessionBounds(overrides: Partial<SessionBounds> = {}): SessionBounds {
+  return {
+    currency: 'INR',
+    totalBudget: money('INR', 200_000),
+    maxPerPurchase: money('INR', 80_000),
+    merchants: { mode: 'ANY' },
+    allowedCategories: [],
+    forbiddenCategories: [],
+    itemsPerPurchase: { min: 1, max: 8 },
+    recurrence: 'ONE_TIME_ONLY',
+    expiresAt: T3,
+    ...overrides,
+  };
+}
+
+export function commerceSession(
+  n: number,
+  overrides: Partial<SessionAuthorityRecord> = {},
+): SessionAuthorityRecord {
+  const bounds = overrides.bounds ?? sessionBounds();
+  return {
+    sessionId: sessionId(n),
+    userId: 'user_priya' as AuthorizationRecord['userId'],
+    purpose: 'Thai curry dinner for 4, vegetarian.',
+    bounds,
+    boundsHash: computeSessionBoundsHash(bounds),
+    policyId: POLICY_ID,
+    policyVersion: POLICY_VERSION,
+    state: 'ACTIVE',
+    reservedMinor: 0,
+    spentMinor: 0,
+    createdAt: T0,
+    expiresAt: T3,
+    revokedAt: null,
+    ...overrides,
+  };
+}
+
+export function sessionPurchase(
+  n: number,
+  overrides: Partial<SessionPurchaseRecord> = {},
+): SessionPurchaseRecord {
+  return {
+    authorizationId: authorizationId(n),
+    sessionId: sessionId(1),
+    purchaseRequestId: sha(`purchase-request-${n}`),
+    reservedMinor: 70_000,
+    settlementState: 'RESERVED',
+    capsuleHash: sha(`capsule-${n}`),
+    createdAt: T0,
+    settledAt: null,
+    ...overrides,
+  };
+}
+
+/** Seeds a policy plus one commerce session, for the session parity cases. */
+export async function seedSession(
+  backend: Backend,
+  options: { session?: SessionAuthorityRecord; authorizations?: readonly number[] } = {},
+): Promise<void> {
+  await backend.repos.policies.insert(policy());
+  await backend.repos.sessions.insert(options.session ?? commerceSession(1));
+  for (const n of options.authorizations ?? []) {
+    await backend.repos.authorizations.insert(authorization(n));
   }
 }
 

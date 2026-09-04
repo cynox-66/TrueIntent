@@ -18,6 +18,7 @@
 import type { Repositories, UnitOfWork } from '@capturelock/kernel';
 import type { InMemoryEvidenceLedger } from './ledger.js';
 import type { InMemoryPolicyRepository } from './policy-repository.js';
+import type { InMemorySessionAuthorityRepository } from './session-repository.js';
 import type {
   InMemoryAuthorizationRepository,
   InMemoryEvaluationRepository,
@@ -36,6 +37,7 @@ export interface InMemoryStores {
   readonly webhookInbox: InMemoryWebhookInboxRepository;
   readonly policies: InMemoryPolicyRepository;
   readonly evidence: InMemoryEvidenceLedger;
+  readonly sessions: InMemorySessionAuthorityRepository;
 }
 
 export class InMemoryUnitOfWork implements UnitOfWork {
@@ -62,6 +64,8 @@ export class InMemoryUnitOfWork implements UnitOfWork {
       this.stores.evaluations.rows,
       this.stores.reviews.rows,
       this.stores.webhookInbox.rows,
+      this.stores.sessions.rows,
+      this.stores.sessions.purchases,
     ];
     const copies = maps.map(map => new Map(map));
     const undoEvidence = this.stores.evidence.snapshot();

@@ -109,7 +109,8 @@ export class Database implements Queryable {
     await this.pool.query(`
       DROP TRIGGER IF EXISTS evidence_envelopes_append_only ON evidence_envelopes;
       DROP TRIGGER IF EXISTS evaluations_append_only ON evaluations;
-      DROP TABLE IF EXISTS idempotency_records, review_requests, webhook_inbox,
+      DROP TABLE IF EXISTS commerce_session_purchases, commerce_sessions,
+        idempotency_records, review_requests, webhook_inbox,
         evidence_envelopes, evaluations, releases, verified_snapshots,
         authorizations, policies, schema_migrations CASCADE;
       DROP FUNCTION IF EXISTS capturelock_reject_mutation();

@@ -62,6 +62,7 @@ import {
   InMemoryPolicyRepository,
   InMemoryReleaseRepository,
   InMemoryReviewRepository,
+  InMemorySessionAuthorityRepository,
   InMemorySnapshotRepository,
   InMemoryUnitOfWork,
   InMemoryWebhookInboxRepository,
@@ -279,6 +280,7 @@ export class Stack {
         webhookInbox: new InMemoryWebhookInboxRepository(),
         policies: new InMemoryPolicyRepository(),
         evidence: new InMemoryEvidenceLedger(signer, verifier),
+        sessions: new InMemorySessionAuthorityRepository(),
       };
       return new Stack(options, stores, new InMemoryUnitOfWork(stores), keys, null);
     }

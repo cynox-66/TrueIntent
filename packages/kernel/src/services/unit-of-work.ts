@@ -20,6 +20,7 @@ import type {
   EvaluationRepository,
   ReleaseRepository,
   ReviewRepository,
+  SessionAuthorityRepository,
   SnapshotRepository,
   WebhookInboxRepository,
 } from '@capturelock/core';
@@ -36,6 +37,15 @@ export interface Repositories {
   readonly webhookInbox: WebhookInboxRepository;
   readonly policies: PolicyRepository;
   readonly evidence: EvidenceLedger;
+  /**
+   * The delegated-authority layer above a single mandate.
+   *
+   * In the transaction set because a budget hold and the mandate it justifies
+   * must commit together: a reserved amount with no authorization to explain it
+   * withholds budget forever, and an authorization with no hold is an
+   * unaccounted spend.
+   */
+  readonly sessions: SessionAuthorityRepository;
 }
 
 export interface UnitOfWork {

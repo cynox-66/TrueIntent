@@ -17,6 +17,7 @@ import {
   money,
   newAuthorizationId,
   newReleaseId,
+  newSessionId,
   newSnapshotId,
   type AuthorizationId,
   type IdempotencyKey,
@@ -28,12 +29,14 @@ import { Database, isAppendOnlyViolation } from '../src/postgres/client.js';
 import { PostgresReleaseRepository } from '../src/postgres/release-repository.js';
 import { PostgresWebhookInboxRepository } from '../src/postgres/webhook-inbox.js';
 import { PostgresEvidenceLedger } from '../src/postgres/evidence-ledger.js';
+import { PostgresSessionAuthorityRepository } from '../src/postgres/session-repository.js';
 
 const CONNECTION =
   process.env['DATABASE_URL'] ??
   'postgresql://capturelock:capturelock@localhost:5432/capturelock_dev';
 
 const AT = asTimestamp('2026-09-03T10:00:00.000Z');
+const EXPIRES = asTimestamp('2026-09-04T10:00:00.000Z');
 
 let db: Database;
 let releases: PostgresReleaseRepository;
@@ -60,7 +63,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.query(
-    `TRUNCATE review_requests, webhook_inbox, evidence_envelopes, evaluations,
+    `TRUNCATE commerce_session_purchases, commerce_sessions, review_requests,
+     webhook_inbox, evidence_envelopes, evaluations,
      releases, verified_snapshots, authorizations, policies CASCADE`,
   );
 });
@@ -324,6 +328,148 @@ describe('append-only enforcement at the database', () => {
       caught = error;
     }
     expect(isAppendOnlyViolation(caught)).toBe(true);
+  });
+});
+
+describe('the aggregate session budget', () => {
+  /**
+   * Seeds a session with a 2,000 budget and an 800 per-purchase cap.
+   *
+   * Those numbers are the demo's, and they are chosen so that the interesting
+   * case is reachable: after 700 and 600 are committed, an 800 purchase is
+   * *inside* the per-transaction ceiling and outside what the user delegated.
+   */
+  async function seedSession(): Promise<string> {
+    await db.query(
+      `INSERT INTO policies (policy_id, version, name, rules, policy_hash, created_at)
+       VALUES ('p','1.0.0','test','[]'::jsonb,$1,$2)
+       ON CONFLICT DO NOTHING`,
+      ['a'.repeat(64), AT],
+    );
+    const id = newSessionId();
+    // Real bounds JSON rather than `{}`: the repository re-parses `expiresAt`
+    // through `asTimestamp` on read rather than trusting the stored value, so a
+    // placeholder here would fail loudly — which is the behaviour we want.
+    const bounds = {
+      currency: 'INR',
+      totalBudget: money('INR', 200_000),
+      maxPerPurchase: money('INR', 80_000),
+      merchants: { mode: 'ANY' },
+      allowedCategories: [],
+      forbiddenCategories: [],
+      itemsPerPurchase: { min: 1, max: 8 },
+      recurrence: 'ONE_TIME_ONLY',
+      expiresAt: EXPIRES,
+    };
+    await db.query(
+      `INSERT INTO commerce_sessions (
+         session_id, user_id, purpose, bounds, bounds_hash, policy_id,
+         policy_version, currency, total_budget_minor, reserved_minor,
+         spent_minor, state, created_at, updated_at, expires_at
+       ) VALUES ($1,'u','dinner',$2::jsonb,$3,'p','1.0.0','INR',200000,0,0,'ACTIVE',$4,$4,$5)`,
+      [id, JSON.stringify(bounds), 'd'.repeat(64), AT, EXPIRES],
+    );
+    return id;
+  }
+
+  it('lets exactly two of ten concurrent 700-paise reserves through', async () => {
+    // The heart of the aggregate-budget claim. Ten agents race for a 2,000
+    // budget in 700 increments; arithmetic allows two, and the database must
+    // permit exactly two however the requests interleave. An application-level
+    // "read the balance, then check it" would let several through here.
+    const sessionId = await seedSession();
+    const sessions = new PostgresSessionAuthorityRepository(db);
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        sessions.reserve(sessionId as never, money('INR', 70_000), AT),
+      ),
+    );
+
+    const reserved = results.filter(r => r.kind === 'RESERVED');
+    const refused = results.filter(r => r.kind === 'REFUSED');
+    expect({ reserved: reserved.length, refused: refused.length }).toEqual({
+      reserved: 2,
+      refused: 8,
+    });
+
+    // And the row agrees: 1,400 held, not 7,000.
+    const current = await sessions.findById(sessionId as never);
+    expect(current?.reservedMinor).toBe(140_000);
+  });
+
+  it('refuses to let the CHECK constraint be crossed even by a direct write', async () => {
+    // The constraint is the guarantee, not the WHERE clause. If `reserve` were
+    // ever rewritten into a read-then-write, this is what would still stop an
+    // overspend — so it is asserted directly rather than assumed.
+    const sessionId = await seedSession();
+    await expect(
+      db.query(`UPDATE commerce_sessions SET reserved_minor = 200001 WHERE session_id = $1`, [
+        sessionId,
+      ]),
+    ).rejects.toThrow(/commerce_sessions_budget_bounded/);
+  });
+
+  it('settles a hold exactly once under ten concurrent settlements', async () => {
+    // Money moved once. Ten sweepers noticing simultaneously must count it
+    // once, which is the purchase row's compare-and-set rather than a guard in
+    // the caller.
+    const sessionId = await seedSession();
+    const sessions = new PostgresSessionAuthorityRepository(db);
+    await sessions.reserve(sessionId as never, money('INR', 70_000), AT);
+
+    const authorizationId = await seedAuthorization();
+    await sessions.recordPurchase({
+      authorizationId,
+      sessionId: sessionId as never,
+      purchaseRequestId: hash('capturelock.v1.purchase_request', { k: 1 }),
+      reservedMinor: 70_000,
+      settlementState: 'RESERVED',
+      capsuleHash: 'e'.repeat(64) as never,
+      createdAt: AT,
+      settledAt: null,
+    });
+
+    const settled = await Promise.all(
+      Array.from({ length: 10 }, () => sessions.settlePurchase(authorizationId, AT)),
+    );
+    expect(settled.filter(r => r !== null)).toHaveLength(1);
+
+    const current = await sessions.findById(sessionId as never);
+    expect({ reserved: current?.reservedMinor, spent: current?.spentMinor }).toEqual({
+      reserved: 0,
+      spent: 70_000,
+    });
+  });
+
+  it('admits exactly one of ten concurrent identical purchase requests', async () => {
+    // The retry path under contention: one row recorded, nine told it already
+    // exists, so a retried purchase can never mint a second mandate.
+    const sessionId = await seedSession();
+    const sessions = new PostgresSessionAuthorityRepository(db);
+    const requestId = hash('capturelock.v1.purchase_request', { k: 'same' });
+
+    const authorizationIds = await Promise.all(
+      Array.from({ length: 10 }, () => seedAuthorization()),
+    );
+
+    const results = await Promise.all(
+      authorizationIds.map(authorizationId =>
+        sessions.recordPurchase({
+          authorizationId,
+          sessionId: sessionId as never,
+          purchaseRequestId: requestId,
+          reservedMinor: 70_000,
+          settlementState: 'RESERVED',
+          capsuleHash: 'e'.repeat(64) as never,
+          createdAt: AT,
+          settledAt: null,
+        }),
+      ),
+    );
+
+    expect(results.filter(r => r.kind === 'RECORDED')).toHaveLength(1);
+    expect(results.filter(r => r.kind === 'DUPLICATE_REQUEST')).toHaveLength(9);
   });
 });
 

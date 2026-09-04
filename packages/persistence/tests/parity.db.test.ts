@@ -22,7 +22,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { asTimestamp, newEvaluationId, type ReleaseState } from '@capturelock/core';
+import { asTimestamp, money, newEvaluationId, type ReleaseState } from '@capturelock/core';
 import { Database } from '../src/index.js';
 import {
   CONNECTION,
@@ -32,6 +32,7 @@ import {
   T3,
   authorization,
   authorizationId,
+  commerceSession,
   evidenceShape,
   inboxRecord,
   memoryBackend,
@@ -44,6 +45,9 @@ import {
   review,
   reviewId,
   seed,
+  seedSession,
+  sessionId,
+  sessionPurchase,
   sha,
   snapshot,
   snapshotId,
@@ -1248,6 +1252,277 @@ describe('concurrency', () => {
  * being an unstated assumption. If a future service writes a child row without
  * resolving its parent, the offline suite will pass and this will not.
  */
+
+describe('commerce sessions: aggregate budget', () => {
+  it('reserves inside the budget, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend);
+      const first = await observe(() =>
+        backend.repos.sessions.reserve(sessionId(1), money('INR', 70_000), T1),
+      );
+      const after = await observe(() => backend.repos.sessions.findById(sessionId(1)));
+      return { first, after };
+    });
+    expect(memory).toMatchObject({ first: { ok: { kind: 'RESERVED' } } });
+  });
+
+  it('refuses the reserve that crosses the aggregate budget, identically', async () => {
+    // Both stores must refuse for the same reason. A fake that reported
+    // BUDGET_EXCEEDED where Postgres reported EXPIRED would be an offline suite
+    // agreeing with production by coincidence.
+    const { memory } = await parity(async backend => {
+      await seedSession(backend);
+      await backend.repos.sessions.reserve(sessionId(1), money('INR', 70_000), T1);
+      await backend.repos.sessions.reserve(sessionId(1), money('INR', 60_000), T1);
+      const third = await observe(() =>
+        backend.repos.sessions.reserve(sessionId(1), money('INR', 80_000), T1),
+      );
+      const session = await observe(() => backend.repos.sessions.findById(sessionId(1)));
+      return { third, session };
+    });
+    expect(memory).toMatchObject({
+      third: { ok: { kind: 'REFUSED', reason: 'BUDGET_EXCEEDED' } },
+    });
+  });
+
+  it('permits exactly the remaining budget, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend);
+      const exact = await observe(() =>
+        backend.repos.sessions.reserve(sessionId(1), money('INR', 200_000), T1),
+      );
+      const overByOne = await observe(() =>
+        backend.repos.sessions.reserve(sessionId(1), money('INR', 1), T1),
+      );
+      return { exact, overByOne };
+    });
+    expect(memory).toMatchObject({
+      exact: { ok: { kind: 'RESERVED' } },
+      overByOne: { ok: { kind: 'REFUSED', reason: 'BUDGET_EXCEEDED' } },
+    });
+  });
+
+  it('refuses a reserve against an expired session, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend);
+      // T3 is the session's own expiry, and the predicate is strictly greater.
+      const result = await observe(() =>
+        backend.repos.sessions.reserve(sessionId(1), money('INR', 1_000), T3),
+      );
+      return { result };
+    });
+    expect(memory).toMatchObject({ result: { ok: { kind: 'REFUSED', reason: 'EXPIRED' } } });
+  });
+
+  it('refuses a reserve against a revoked session, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend);
+      await backend.repos.sessions.transition(sessionId(1), ['ACTIVE'], 'REVOKED', {
+        revokedAt: T1,
+      });
+      const result = await observe(() =>
+        backend.repos.sessions.reserve(sessionId(1), money('INR', 1_000), T1),
+      );
+      return { result };
+    });
+    expect(memory).toMatchObject({ result: { ok: { kind: 'REFUSED', reason: 'NOT_ACTIVE' } } });
+  });
+
+  it('refuses a reserve against an unknown session, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend);
+      const result = await observe(() =>
+        backend.repos.sessions.reserve(sessionId(404), money('INR', 1_000), T1),
+      );
+      return { result };
+    });
+    expect(memory).toMatchObject({ result: { ok: { kind: 'REFUSED', reason: 'NOT_FOUND' } } });
+  });
+
+  it('refuses a state transition from outside the source list, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend);
+      await backend.repos.sessions.transition(sessionId(1), ['ACTIVE'], 'REVOKED', {});
+      const again = await observe(() =>
+        backend.repos.sessions.transition(sessionId(1), ['ACTIVE'], 'EXPIRED', {}),
+      );
+      return { again };
+    });
+    expect(memory).toMatchObject({ again: { ok: null } });
+  });
+
+  it("orders a user's sessions identically under a limit", async () => {
+    // Same created_at on every row, so the tiebreak is what decides the set. An
+    // under-specified ordering here would mean the two stores could return
+    // different sessions for the same query.
+    const { memory } = await parity(async backend => {
+      await backend.repos.policies.insert(policy());
+      for (const n of [1, 2, 3]) {
+        await backend.repos.sessions.insert(commerceSession(n));
+      }
+      const page = await observe(() => backend.repos.sessions.listByUser('user_priya' as never, 2));
+      return { page };
+    });
+    expect(memory).toMatchObject({ page: { ok: [{}, {}] } });
+  });
+});
+
+describe('commerce sessions: purchase holds', () => {
+  it('records a hold, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1] });
+      const result = await observe(() => backend.repos.sessions.recordPurchase(sessionPurchase(1)));
+      return { result };
+    });
+    expect(memory).toMatchObject({ result: { ok: { kind: 'RECORDED' } } });
+  });
+
+  it('reports a repeated purchase request rather than recording a second, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1, 2] });
+      const first = await observe(() => backend.repos.sessions.recordPurchase(sessionPurchase(1)));
+      // A different authorization, the same (session, request) — the retry path.
+      const retry = await observe(() =>
+        backend.repos.sessions.recordPurchase({
+          ...sessionPurchase(2),
+          purchaseRequestId: sessionPurchase(1).purchaseRequestId,
+        }),
+      );
+      const listed = await observe(() =>
+        backend.repos.sessions.listPurchasesBySession(sessionId(1), 10),
+      );
+      return { first, retry, listed };
+    });
+    expect(memory).toMatchObject({ retry: { ok: { kind: 'DUPLICATE_REQUEST' } } });
+  });
+
+  it('refuses a second hold for the same authorization, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1] });
+      await backend.repos.sessions.recordPurchase(sessionPurchase(1));
+      const again = await observe(() =>
+        backend.repos.sessions.recordPurchase({
+          ...sessionPurchase(1),
+          purchaseRequestId: sha('a-different-request'),
+        }),
+      );
+      return { again };
+    });
+    expect(memory).toMatchObject({
+      again: { refused: 'UNIQUE_VIOLATION:commerce_session_purchases_pkey' },
+    });
+  });
+
+  it('settles a hold into spend, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1] });
+      await backend.repos.sessions.reserve(sessionId(1), money('INR', 70_000), T1);
+      await backend.repos.sessions.recordPurchase(sessionPurchase(1));
+
+      const settled = await observe(() =>
+        backend.repos.sessions.settlePurchase(authorizationId(1), T2),
+      );
+      const session = await observe(() => backend.repos.sessions.findById(sessionId(1)));
+      return { settled, session };
+    });
+    expect(memory).toMatchObject({
+      settled: { ok: { settlementState: 'SETTLED' } },
+      session: { ok: { reservedMinor: 0, spentMinor: 70_000 } },
+    });
+  });
+
+  it('counts a settlement once when applied twice, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1] });
+      await backend.repos.sessions.reserve(sessionId(1), money('INR', 70_000), T1);
+      await backend.repos.sessions.recordPurchase(sessionPurchase(1));
+      await backend.repos.sessions.settlePurchase(authorizationId(1), T2);
+
+      const second = await observe(() =>
+        backend.repos.sessions.settlePurchase(authorizationId(1), T2),
+      );
+      const session = await observe(() => backend.repos.sessions.findById(sessionId(1)));
+      return { second, session };
+    });
+    expect(memory).toMatchObject({
+      second: { ok: null },
+      session: { ok: { spentMinor: 70_000 } },
+    });
+  });
+
+  it('frees a released hold without recording spend, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1] });
+      await backend.repos.sessions.reserve(sessionId(1), money('INR', 70_000), T1);
+      await backend.repos.sessions.recordPurchase(sessionPurchase(1));
+
+      const released = await observe(() =>
+        backend.repos.sessions.releasePurchase(authorizationId(1), T2),
+      );
+      const session = await observe(() => backend.repos.sessions.findById(sessionId(1)));
+      return { released, session };
+    });
+    expect(memory).toMatchObject({
+      released: { ok: { settlementState: 'RELEASED' } },
+      session: { ok: { reservedMinor: 0, spentMinor: 0 } },
+    });
+  });
+
+  it('refuses to release an already-settled hold, identically', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1] });
+      await backend.repos.sessions.reserve(sessionId(1), money('INR', 70_000), T1);
+      await backend.repos.sessions.recordPurchase(sessionPurchase(1));
+      await backend.repos.sessions.settlePurchase(authorizationId(1), T2);
+
+      const released = await observe(() =>
+        backend.repos.sessions.releasePurchase(authorizationId(1), T2),
+      );
+      return { released };
+    });
+    expect(memory).toMatchObject({ released: { ok: null } });
+  });
+
+  it('selects the same unresolved holds under a limit', async () => {
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1, 2, 3] });
+      for (const n of [1, 2, 3]) {
+        await backend.repos.sessions.reserve(sessionId(1), money('INR', 60_000), T1);
+        await backend.repos.sessions.recordPurchase(sessionPurchase(n));
+      }
+      await backend.repos.sessions.settlePurchase(authorizationId(2), T2);
+
+      const stranded = await observe(() => backend.repos.sessions.findUnsettledPurchases(T2, 10));
+      return { stranded };
+    });
+    expect(memory).toMatchObject({ stranded: { ok: [{}, {}] } });
+  });
+
+  it('rolls back a hold and its reservation together when the transaction throws', async () => {
+    // The reason `sessions` is in the transaction set: a reservation with no
+    // purchase row to explain it would withhold budget forever.
+    const { memory } = await parity(async backend => {
+      await seedSession(backend, { authorizations: [1] });
+      const failed = await observe(() =>
+        backend.unitOfWork.withTransaction(async repos => {
+          await repos.sessions.reserve(sessionId(1), money('INR', 70_000), T1);
+          await repos.sessions.recordPurchase(sessionPurchase(1));
+          throw new Error('deliberate');
+        }),
+      );
+      const session = await observe(() => backend.repos.sessions.findById(sessionId(1)));
+      const purchase = await observe(() =>
+        backend.repos.sessions.findPurchaseByAuthorization(authorizationId(1)),
+      );
+      return { failed, session, purchase };
+    });
+    expect(memory).toMatchObject({
+      session: { ok: { reservedMinor: 0 } },
+      purchase: { ok: null },
+    });
+  });
+});
+
 describe('constraints only Postgres enforces', () => {
   it('refuses a release whose authorization does not exist', async () => {
     const backend = postgresBackend(db);
@@ -1268,6 +1543,41 @@ describe('constraints only Postgres enforces', () => {
     const backend = postgresBackend(db);
     const result = await observe(() => backend.repos.authorizations.insert(authorization(1)));
     expect(result).toMatchObject({ refused: 'FOREIGN_KEY_VIOLATION' });
+  });
+
+  it('refuses a purchase hold whose session does not exist', async () => {
+    const backend = postgresBackend(db);
+    await backend.repos.policies.insert(policy());
+    await backend.repos.authorizations.insert(authorization(1));
+    const result = await observe(() =>
+      backend.repos.sessions.recordPurchase({
+        ...sessionPurchase(1),
+        sessionId: sessionId(404),
+      }),
+    );
+    expect(result).toMatchObject({ refused: 'FOREIGN_KEY_VIOLATION' });
+
+    // The in-memory store accepts it: foreign keys are outside what a Map can
+    // model, and every production write resolves its session first. Documented
+    // rather than assumed.
+    const fake = memoryBackend();
+    await expect(
+      fake.repos.sessions.recordPurchase({ ...sessionPurchase(1), sessionId: sessionId(404) }),
+    ).resolves.toMatchObject({ kind: 'RECORDED' });
+  });
+
+  it('refuses a direct write that would overspend the session budget', async () => {
+    // The CHECK constraint, asserted on its own. `reserve`'s WHERE clause is
+    // the fast path; this is the guarantee behind it, and it is the one thing a
+    // rewritten repository could not silently remove.
+    const backend = postgresBackend(db);
+    await backend.repos.policies.insert(policy());
+    await backend.repos.sessions.insert(commerceSession(1));
+    await expect(
+      db.query(`UPDATE commerce_sessions SET spent_minor = 200001 WHERE session_id = $1`, [
+        sessionId(1),
+      ]),
+    ).rejects.toThrow(/commerce_sessions_budget_bounded/);
   });
 
   it('refuses an UPDATE against the append-only evidence table', async () => {

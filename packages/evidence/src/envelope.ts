@@ -26,6 +26,19 @@ export const ENVELOPE_KINDS = [
   'RELEASE_TRANSITION',
   'WEBHOOK',
   'REVIEW_RESOLUTION',
+  /**
+   * What a buyer agent was trying to buy, and under what delegated authority.
+   *
+   * Appended before the order gate, so a chain reads in causal order: the
+   * intent and the cart first, then what CaptureLock decided about them. It
+   * carries no serialized verification context, so the replay endpoint reports
+   * `reproduced: false` for it rather than attempting a re-evaluation of
+   * something that was never a decision.
+   *
+   * This string is enumerated in exactly two places — here and the CHECK
+   * constraint on `evidence_envelopes.kind` (migration 0003). They must agree.
+   */
+  'AGENT_CONTEXT',
 ] as const;
 
 export type EnvelopeKind = (typeof ENVELOPE_KINDS)[number];

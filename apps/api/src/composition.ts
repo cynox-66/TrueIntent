@@ -57,6 +57,7 @@ import {
   InMemoryAuthorizationRepository,
   InMemoryEvaluationRepository,
   InMemoryEvidenceLedger,
+  InMemorySessionAuthorityRepository,
   InMemoryPolicyRepository,
   InMemoryReleaseRepository,
   InMemoryReviewRepository,
@@ -158,6 +159,7 @@ function inMemoryPersistence(signer: EvidenceSigner, verifier: EvidenceVerifier)
     webhookInbox: new InMemoryWebhookInboxRepository(),
     policies: new InMemoryPolicyRepository(),
     evidence: new InMemoryEvidenceLedger(signer, verifier),
+    sessions: new InMemorySessionAuthorityRepository(),
   };
   return {
     repositories: stores,

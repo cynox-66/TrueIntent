@@ -15,6 +15,7 @@ export {
   InMemoryWebhookInboxRepository,
 } from './memory/repositories.js';
 
+export { InMemorySessionAuthorityRepository } from './memory/session-repository.js';
 export { InMemoryEvidenceLedger } from './memory/ledger.js';
 export { InMemoryUnitOfWork, type InMemoryStores } from './memory/unit-of-work.js';
 export { InMemoryPolicyRepository } from './memory/policy-repository.js';
@@ -32,6 +33,7 @@ export { PostgresReleaseRepository } from './postgres/release-repository.js';
 export { PostgresWebhookInboxRepository } from './postgres/webhook-inbox.js';
 export { PostgresEvidenceLedger } from './postgres/evidence-ledger.js';
 export { PostgresAuthorizationRepository } from './postgres/authorization-repository.js';
+export { PostgresSessionAuthorityRepository } from './postgres/session-repository.js';
 export {
   PostgresEvaluationRepository,
   PostgresPolicyRepository,

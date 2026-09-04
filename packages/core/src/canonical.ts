@@ -54,6 +54,9 @@ export const HASH_DOMAINS = [
   'capturelock.v1.receipt',
   'capturelock.v1.request_fingerprint',
   'capturelock.v1.webhook_payload',
+  'capturelock.v1.session_bounds',
+  'capturelock.v1.context_capsule',
+  'capturelock.v1.purchase_request',
 ] as const;
 
 export type HashDomain = (typeof HASH_DOMAINS)[number];

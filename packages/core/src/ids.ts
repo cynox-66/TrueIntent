@@ -20,6 +20,7 @@ export type EnvelopeId = Brand<string, 'EnvelopeId'>;
 export type ReviewId = Brand<string, 'ReviewId'>;
 export type RequestId = Brand<string, 'RequestId'>;
 export type ChainId = Brand<string, 'ChainId'>;
+export type SessionId = Brand<string, 'SessionId'>;
 export type IdempotencyKey = Brand<string, 'IdempotencyKey'>;
 export type UserId = Brand<string, 'UserId'>;
 export type MerchantId = Brand<string, 'MerchantId'>;
@@ -43,6 +44,7 @@ export const ID_PREFIXES = {
   review: 'rev',
   request: 'req',
   chain: 'chn',
+  session: 'sess',
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;
@@ -81,6 +83,7 @@ export const newEnvelopeId = (): EnvelopeId => makeId('envelope') as EnvelopeId;
 export const newReviewId = (): ReviewId => makeId('review') as ReviewId;
 export const newRequestId = (): RequestId => makeId('request') as RequestId;
 export const newChainId = (): ChainId => makeId('chain') as ChainId;
+export const newSessionId = (): SessionId => makeId('session') as SessionId;
 
 export const asAuthorizationId = (v: string): AuthorizationId =>
   parseId<AuthorizationId>('authorization', v);
@@ -89,6 +92,7 @@ export const asReleaseId = (v: string): ReleaseId => parseId<ReleaseId>('release
 export const asEnvelopeId = (v: string): EnvelopeId => parseId<EnvelopeId>('envelope', v);
 export const asChainId = (v: string): ChainId => parseId<ChainId>('chain', v);
 export const asReviewId = (v: string): ReviewId => parseId<ReviewId>('review', v);
+export const asSessionId = (v: string): SessionId => parseId<SessionId>('session', v);
 
 export const AuthorizationIdSchema = idSchema<AuthorizationId>('authorization');
 export const SnapshotIdSchema = idSchema<SnapshotId>('snapshot');
@@ -98,6 +102,7 @@ export const EnvelopeIdSchema = idSchema<EnvelopeId>('envelope');
 export const ReviewIdSchema = idSchema<ReviewId>('review');
 export const RequestIdSchema = idSchema<RequestId>('request');
 export const ChainIdSchema = idSchema<ChainId>('chain');
+export const SessionIdSchema = idSchema<SessionId>('session');
 
 /**
  * Identifiers supplied by callers (users, merchants, SKUs) are restricted to a

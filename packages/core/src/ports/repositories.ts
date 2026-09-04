@@ -14,6 +14,7 @@
 
 import type { Sha256Hex } from '../canonical.js';
 import type { Timestamp } from '../time.js';
+import type { Money } from '../money.js';
 import type {
   AuthorizationId,
   EvaluationId,
@@ -21,9 +22,16 @@ import type {
   Receipt,
   ReleaseId,
   ReviewId,
+  SessionId,
   SnapshotId,
+  UserId,
 } from '../ids.js';
 import type { AuthorizationRecord, AuthorizationState } from '../domain/intent.js';
+import type {
+  SessionAuthorityRecord,
+  SessionAuthorityState,
+  SessionPurchaseRecord,
+} from '../domain/session.js';
 import type { VerifiedSnapshot } from '../domain/snapshot.js';
 import type { ReleaseRecord, ReleaseState } from '../domain/release.js';
 import type { Gate, VerificationDecision } from '../domain/decision.js';
@@ -246,4 +254,87 @@ export interface ReviewRepository {
     resolvedBy: string,
     at: Timestamp,
   ): Promise<ReviewRecord | null>;
+}
+
+/**
+ * The outcome of committing budget to a purchase attempt.
+ *
+ * Refusal is a typed result rather than a throw because it is an ordinary
+ * answer, not a fault: an agent working through a session will legitimately run
+ * out of budget, and that has to be reportable without an exception path that
+ * something upstream might catch permissively.
+ */
+export type ReserveBudgetResult =
+  | { readonly kind: 'RESERVED'; readonly session: SessionAuthorityRecord }
+  /** The predicate failed. `reason` says which part of it. */
+  | {
+      readonly kind: 'REFUSED';
+      readonly reason: 'BUDGET_EXCEEDED' | 'NOT_ACTIVE' | 'EXPIRED' | 'NOT_FOUND';
+    };
+
+export type RecordPurchaseResult =
+  | { readonly kind: 'RECORDED'; readonly purchase: SessionPurchaseRecord }
+  /**
+   * This (session, purchaseRequestId) already exists.
+   *
+   * Returned rather than thrown because it is the retry path: the caller hands
+   * back the existing authorization instead of minting a second mandate.
+   */
+  | { readonly kind: 'DUPLICATE_REQUEST'; readonly existing: SessionPurchaseRecord };
+
+export interface SessionAuthorityRepository {
+  insert(record: SessionAuthorityRecord): Promise<void>;
+  findById(id: SessionId): Promise<SessionAuthorityRecord | null>;
+  listByUser(userId: UserId, limit: number): Promise<readonly SessionAuthorityRecord[]>;
+
+  /**
+   * Commits `amount` of the session's budget, atomically.
+   *
+   * One statement, whose WHERE clause carries the entire safety predicate:
+   * active, unexpired, and `reserved + spent + amount <= totalBudget`. Two
+   * concurrent purchase requests cannot both succeed against the same remaining
+   * budget, because the row lock serializes the updates and the second one
+   * re-evaluates the predicate against the first one's write.
+   *
+   * This is deliberately not `findById` followed by a check: that shape is
+   * readable and wrong, and it is the exact race the aggregate budget exists to
+   * close.
+   */
+  reserve(id: SessionId, amount: Money, at: Timestamp): Promise<ReserveBudgetResult>;
+
+  /** Records a purchase attempt's hold. Duplicate (session, request) is a typed result. */
+  recordPurchase(record: SessionPurchaseRecord): Promise<RecordPurchaseResult>;
+
+  findPurchaseByAuthorization(id: AuthorizationId): Promise<SessionPurchaseRecord | null>;
+  findPurchaseByRequestId(
+    id: SessionId,
+    purchaseRequestId: Sha256Hex,
+  ): Promise<SessionPurchaseRecord | null>;
+  listPurchasesBySession(id: SessionId, limit: number): Promise<readonly SessionPurchaseRecord[]>;
+
+  /**
+   * Converts a hold into confirmed spend. CAS from RESERVED; null if already resolved.
+   *
+   * Exactly-once is the purchase row's compare-and-set, not an application
+   * check: money that moved must be counted once even if the caller is retried
+   * or two sweepers race.
+   */
+  settlePurchase(id: AuthorizationId, at: Timestamp): Promise<SessionPurchaseRecord | null>;
+
+  /** Frees a hold whose purchase did not move money. CAS from RESERVED. */
+  releasePurchase(id: AuthorizationId, at: Timestamp): Promise<SessionPurchaseRecord | null>;
+
+  /** Holds still unresolved after `olderThan`, for the reconciling sweep. */
+  findUnsettledPurchases(
+    olderThan: Timestamp,
+    limit: number,
+  ): Promise<readonly SessionPurchaseRecord[]>;
+
+  /** CAS on session state. Returns null when the session was not in `from`. */
+  transition(
+    id: SessionId,
+    from: readonly SessionAuthorityState[],
+    to: SessionAuthorityState,
+    patch: { readonly revokedAt?: Timestamp },
+  ): Promise<SessionAuthorityRecord | null>;
 }

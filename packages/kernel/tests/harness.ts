@@ -40,6 +40,7 @@ import {
   InMemoryPolicyRepository,
   InMemoryReleaseRepository,
   InMemoryReviewRepository,
+  InMemorySessionAuthorityRepository,
   InMemorySnapshotRepository,
   InMemoryUnitOfWork,
   InMemoryWebhookInboxRepository,
@@ -150,6 +151,7 @@ export class Harness {
   readonly reviews = new InMemoryReviewRepository();
   readonly webhookInbox = new InMemoryWebhookInboxRepository();
   readonly policies = new InMemoryPolicyRepository();
+  readonly sessions = new InMemorySessionAuthorityRepository();
   readonly evidence: InMemoryEvidenceLedger;
   readonly deps: PaymentDependencies;
 
@@ -191,6 +193,7 @@ export class Harness {
       webhookInbox: this.webhookInbox,
       policies: this.policies,
       evidence: this.evidence,
+      sessions: this.sessions,
     };
 
     this.deps = {

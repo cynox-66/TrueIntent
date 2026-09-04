@@ -20,6 +20,7 @@ import { PostgresAuthorizationRepository } from './authorization-repository.js';
 import { PostgresReleaseRepository } from './release-repository.js';
 import { PostgresWebhookInboxRepository } from './webhook-inbox.js';
 import { PostgresEvidenceLedger } from './evidence-ledger.js';
+import { PostgresSessionAuthorityRepository } from './session-repository.js';
 import {
   PostgresEvaluationRepository,
   PostgresPolicyRepository,
@@ -42,6 +43,7 @@ export function buildRepositories(
     webhookInbox: new PostgresWebhookInboxRepository(db),
     policies: new PostgresPolicyRepository(db),
     evidence: new PostgresEvidenceLedger(db, signer, verifier, options),
+    sessions: new PostgresSessionAuthorityRepository(db),
   };
 }
 
